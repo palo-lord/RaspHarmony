@@ -50,7 +50,7 @@ REPETIR_LISTA = True
 PARADO, TOCANDO, PAUSADO = 0, 1, 2
 
 # Áudio / I2S
-SAMPLE_RATE = 16000
+SAMPLE_RATE = 44100
 IBUF_SINT = 4096     # ~93 ms de latência no teclado
 IBUF_PLAYER = 8192   # ~186 ms: folga para o display atualizar sem falhar o áudio
 
