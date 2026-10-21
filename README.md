@@ -5,7 +5,7 @@ Em ambas as versões programamos utilizando micropython.\
 Na versão protoboard utilizamos a placa Raspberry Pi Pico 2, já na versão PCB utilizamos a Pi Pico.\
 <img width="842" height="595" alt="image" src="https://github.com/user-attachments/assets/431e1df0-1cf8-458e-8157-acd2e98080bd" />
 
-Lista de BUGS e Pendencias:\
+# Lista de BUGS e Pendencias:
 •Retroceder no Player não funciona\
 •Menus Pulam funcionalidades\
 •5% volume mata o sinal\
