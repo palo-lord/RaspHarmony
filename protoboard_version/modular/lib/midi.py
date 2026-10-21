@@ -34,7 +34,7 @@ class MIDI:
         "Aumentado": (20, 20, 0),
     }
 
-    def __init__(self, root_base_midi=60, sample_rate=16000):
+    def __init__(self, root_base_midi=60, sample_rate=44100):
         self.root_base_midi = root_base_midi
         self.sample_rate = sample_rate
         # Afinação por nota (em cents, -50..+50), vale para todas as oitavas
