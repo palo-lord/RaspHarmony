@@ -187,7 +187,7 @@ except Exception as e:
 PARADO, TOCANDO, PAUSADO = 0, 1, 2
 
 # I2S para saída de áudio (MAX98357A) -----------------------------------
-SAMPLE_RATE = 16000
+SAMPLE_RATE = 44100
 IBUF_SINT = 4096      # ~93 ms de latência no teclado (menor = mais rápido, mas o display pode causar falhas)
 IBUF_PLAYER = 8192    # ~186 ms: folga para o display atualizar sem falhar o áudio
 i2s_max = None
@@ -462,7 +462,7 @@ class MIDI:
         "Aumentado": (20, 20, 0),
     }
 
-    def __init__(self, root_base_midi=60, sample_rate=16000):
+    def __init__(self, root_base_midi=60, sample_rate=44100):
         self.root_base_midi = root_base_midi
         self.sample_rate = sample_rate
         # Afinação por nota (em cents, -50..+50), vale para todas as oitavas
