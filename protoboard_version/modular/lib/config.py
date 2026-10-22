@@ -43,7 +43,7 @@ LIMIAR = 12000       # sensibilidade para detectar movimento
 # Cartão SD (SPI)
 SD_MOUNT = "/sd"
 SD_SCK, SD_MOSI, SD_MISO, SD_CS = 18, 19, 16, 17
-TAM_BUFFER = 2048    # bytes lidos por vez do SD (múltiplo de 512 é ideal)
+TAM_BUFFER = 8192    # bytes lidos por vez do SD (múltiplo de 512 é ideal)
 REPETIR_LISTA = True
 
 # Estados do Player
