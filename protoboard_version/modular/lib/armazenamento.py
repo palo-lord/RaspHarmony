@@ -9,7 +9,7 @@ import sdcard
 def montar_sd(sck, mosi, miso, cs_pin, ponto_montagem):
     """Monta o SD e retorna a lista de caminhos .wav.
     Se o cartão não estiver presente, retorna lista vazia (o Teclado continua funcionando)."""
-    spi = SPI(0, baudrate=1000000, polarity=0, phase=0,
+    spi = SPI(0, baudrate=8000000, polarity=0, phase=0,
               sck=Pin(sck), mosi=Pin(mosi), miso=Pin(miso))
     cs = Pin(cs_pin, Pin.OUT)
     cs.value(1)  # Desativa o dispositivo inicialmente
