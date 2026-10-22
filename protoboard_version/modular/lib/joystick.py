@@ -9,7 +9,7 @@ from botao import Botao
 
 class Joystick:
     def __init__(self, pin_x, pin_y, pin_sw, limiar=12000,
-                 inverte_x=False, inverte_y=False):
+                 inverte_x=True, inverte_y=True):
         self.sw = Pin(pin_sw, Pin.IN, Pin.PULL_UP)
         self.adc_x = ADC(Pin(pin_x))
         self.adc_y = ADC(Pin(pin_y))
