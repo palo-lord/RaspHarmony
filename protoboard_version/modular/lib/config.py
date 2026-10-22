@@ -36,8 +36,8 @@ OLED_SDA = 0
 OLED_ADDR = 0x3C
 
 # Joystick
-INVERTE_X = False    # troque para True se o joystick navegar ao contrário
-INVERTE_Y = False
+INVERTE_X = True    # troque para True se o joystick navegar ao contrário
+INVERTE_Y = True
 LIMIAR = 12000       # sensibilidade para detectar movimento
 
 # Cartão SD (SPI)
