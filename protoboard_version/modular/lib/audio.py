@@ -7,12 +7,14 @@ import micropython
 from config import SCK_PIN, WS_PIN, SD_PIN, IBUF_PLAYER, VOL_PASSO, VOLUME_INICIAL
 
 SILENCIO = bytearray(512)
-
+GANHO_UNIT = 4096
 
 def calcula_ganho(vol):
     """Percentual -> ganho em ponto fixo (256 = 1.0). Curva quadrática."""
-    return vol * vol * 256 // 10000
-
+    g = vol * vol * GANHO_UNIT // 10000
+    if vol > 0 and g < 1:
+        g = 1
+    return g
 
 @micropython.viper
 def aplicar_volume(buf, n: int, ganho: int):
@@ -22,7 +24,7 @@ def aplicar_volume(buf, n: int, ganho: int):
         s = int(p[i])
         if s >= 32768:       # amostra com sinal
             s -= 65536
-        p[i] = ((s * ganho) >> 8) & 0xFFFF
+        p[i] = ((s * ganho) >> 12) & 0xFFFF
 
 
 class SaidaAudio:
@@ -65,6 +67,6 @@ class SaidaAudio:
         Reconfigura o I2S automaticamente se taxa/canais do WAV forem diferentes."""
         if (wav.taxa, wav.canais, IBUF_PLAYER) != self._cfg:
             self.abrir(wav.taxa, wav.canais, IBUF_PLAYER)
-        if self.ganho != 256:
+        if self.ganho != GANHO_UNIT:
             aplicar_volume(dados, n, self.ganho)
         self.i2s.write(dados)
