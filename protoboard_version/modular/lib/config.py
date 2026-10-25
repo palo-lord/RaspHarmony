@@ -55,8 +55,8 @@ IBUF_SINT = 4096     # ~93 ms de latência no teclado
 IBUF_PLAYER = 16384   # ~186 ms: folga para o display atualizar sem falhar o áudio
 
 # Volume
-VOL_PASSO = 5        # % por clique do encoder
-VOLUME_INICIAL = 50
+VOL_PASSO = 2        # % por clique do encoder
+VOLUME_INICIAL = 30
 
 # Interface - UI
 # O índice 4 (Acordes) é preenchido em estado.py, pois depende da lista de acordes.
@@ -80,3 +80,4 @@ Y_INI = 11
 Y_PASSO = 9
 Y_NOTAS = 47
 Y_RODAPE = 56
+
