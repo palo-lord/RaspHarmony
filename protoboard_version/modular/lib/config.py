@@ -43,7 +43,7 @@ LIMIAR = 12000       # sensibilidade para detectar movimento
 # Cartão SD (SPI)
 SD_MOUNT = "/sd"
 SD_SCK, SD_MOSI, SD_MISO, SD_CS = 18, 19, 16, 17
-TAM_BUFFER = 8192    # bytes lidos por vez do SD (múltiplo de 512 é ideal)
+TAM_BUFFER = 8192    # bytes lidos por vez do SD (múltiplo de 512 é ideal), 93ms
 REPETIR_LISTA = True
 
 # Estados do Player
@@ -51,8 +51,8 @@ PARADO, TOCANDO, PAUSADO = 0, 1, 2
 
 # Áudio / I2S
 SAMPLE_RATE = 44100
-IBUF_SINT = 4096     # ~93 ms de latência no teclado
-IBUF_PLAYER = 16384   # ~186 ms: folga para o display atualizar sem falhar o áudio
+IBUF_SINT = 4096     # ~46.5 ms de latência no teclado
+IBUF_PLAYER = 32768   # ~372 ms de folga (mono); custa 16 KB a mais de RAM
 
 # Volume
 VOL_PASSO = 2        # % por clique do encoder
