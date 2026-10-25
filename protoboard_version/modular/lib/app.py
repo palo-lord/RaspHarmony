@@ -130,6 +130,7 @@ class Aplicacao:
     def executar(self):
         e = self.e
         chave_ant = None
+        t_desenho = utime.ticks_ms()
         while True:
             x, mov_x, mov_y = self.joy.ler()
             modo_ant = e.mode_ui
@@ -146,7 +147,9 @@ class Aplicacao:
                 self.loop_sintetizador(mov_x, delta_enc, clique_enc)
 
             chave = self.tela.chave_visual()
-            if chave != chave_ant:
+            agora = utime.ticks_ms()
+            if chave != chave_ant and utime.ticks_diff(agora, t_desenho) >= 250:
                 chave_ant = chave
+                t_desenho = agora
                 self.tela.desenhar()
 
