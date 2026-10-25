@@ -176,7 +176,7 @@ class Tela:
         else:
             self.desenha_afinador()
 
-        self.oled.show()
+        self.oled.show_parcial(1)
 
     def chave_visual(self):
         """Resumo do que está na tela; só redesenha quando isso muda."""
