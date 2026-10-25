@@ -15,7 +15,7 @@ class Encoder:
     """Encoder rotativo em quadratura. A interrupção só acumula passos;
     o resto do programa lê com cliques(), sem nunca mexer em SD/I2S/OLED na IRQ."""
 
-    def __init__(self, pino_a, pino_b, passos_por_clique=4):
+    def __init__(self, pino_a, pino_b, passos_por_clique=2):
         self.a = pino_a
         self.b = pino_b
         self.ppc = passos_por_clique      # 4 para a maioria (KY-040); 2 ou 1 em outros
@@ -35,8 +35,9 @@ class Encoder:
         positivo = horário, negativo = anti-horário. Troque o sinal se o
         seu encoder estiver ligado ao contrário."""
         st = disable_irq()
-        c = self.contagem
+        c = -self.contagem
         n = c // self.ppc if c >= 0 else -((-c) // self.ppc)
         self.contagem = c - n * self.ppc   # guarda o resto de um clique incompleto
         enable_irq(st)
         return n
+
