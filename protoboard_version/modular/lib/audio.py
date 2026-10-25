@@ -35,6 +35,18 @@ class SaidaAudio:
         self._cfg = None
         self.volume = VOLUME_INICIAL          # 0..100 (%)
         self.ganho = calcula_ganho(self.volume)
+        self.mudo = False
+        
+    def _atualiza_ganho(self):
+        self.ganho = 0 if self.mudo else calcula_ganho(self.volume)
+
+    def alternar_mudo(self):
+        self.mudo = not self.mudo
+        self._atualiza_ganho()
+
+    def desmutar(self):
+        self.mudo = False
+        self._atualiza_ganho()
 
     def abrir(self, taxa, canais, ibuf):
         """(Re)cria o I2S só se a configuração mudou."""
@@ -56,8 +68,10 @@ class SaidaAudio:
 
     def ajustar_volume(self, delta):
         if delta:
-            self.volume = max(0, min(100, self.volume + delta * VOL_PASSO))
-            self.ganho = calcula_ganho(self.volume)
+            self.volume = max(0, min(100, self.volume + delta * VOL_PASSO))            
+            self.mudo = False
+            
+            self._atualiza_ganho()
 
     def escrever(self, dados):
         self.i2s.write(dados)
@@ -70,3 +84,4 @@ class SaidaAudio:
         if self.ganho != GANHO_UNIT:
             aplicar_volume(dados, n, self.ganho)
         self.i2s.write(dados)
+
