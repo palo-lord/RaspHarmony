@@ -89,7 +89,8 @@ class Tela:
             pos = p.wav.posicao_s if p.wav else 0
             dur = p.wav.duracao_s if p.wav else 0
             self.centro(self.janela(nome, int(pos)), 11)
-            self.centro("{}/{} Vol:{}%".format(p.indice + 1, len(p.arquivos), self.audio.volume), 20)
+            if self.audio.mudo: self.centro("{}/{} Vol:MUDO".format(p.indice + 1, len(p.arquivos)), 20)
+            else: self.centro("{}/{} Vol:{}%".format(p.indice + 1, len(p.arquivos), self.audio.volume), 20)
             self.centro("{} / {}".format(self.fmt_tempo(pos), self.fmt_tempo(dur)), 29)
             # Símbolos multimídia (altura 9 px): prévio | play/pause | próximo
             ys = 38
@@ -182,7 +183,8 @@ class Tela:
         e = self.e
         if e.mode_ui == 2 and e.player is not None:
             pos = int(e.player.wav.posicao_s) if e.player.wav else 0
-            return (2, e.player.indice, e.player.estado, pos, self.audio.volume)
+            return (2, e.player.indice, e.player.estado, pos, self.audio.volume, self.audio.mudo)
         return (e.mode_ui, e.mode_sel, tuple(e.notas_tocando), self.audio.volume,
                 e.instrumento, e.oitava, e.sel_nota, self.midi.afinacao[e.sel_nota],
                 e.acorde_ativo())
+
