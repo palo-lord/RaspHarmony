@@ -51,6 +51,7 @@ class Aplicacao:
     def entrar_modo(self, antigo, novo):
         e = self.e
         if antigo == 2 and e.player is not None:
+            self.audio.desmutar()
             e.player.parar()
         if novo == 2:
             self.audio.abrir(C.SAMPLE_RATE, 1, C.IBUF_PLAYER)
@@ -64,11 +65,12 @@ class Aplicacao:
                 e.acorde_fim = utime.ticks_ms()
 
     # ---------- laços de cada família de modos ----------
-    def loop_player(self, x, delta_enc):
+    def loop_player(self, x, delta_enc, clique_enc):
         e = self.e
         player = e.player
         self.audio.ajustar_volume(delta_enc)
-
+        if clique_enc:
+            self.audio.alternar_mudo()
         tecla = self.teclado.scan(False)      # botões multimídia (linha 4)
         if tecla != e.ultima_tecla:           # só age na borda (um aperto = uma ação)
             e.ultima_tecla = tecla
@@ -139,7 +141,7 @@ class Aplicacao:
             clique_enc = self.btn_enc.pressionado()
 
             if e.mode_ui == 2:
-                self.loop_player(x, delta_enc)
+                self.loop_player(x, delta_enc, clique_enc)
             else:
                 self.loop_sintetizador(mov_x, delta_enc, clique_enc)
 
@@ -147,3 +149,4 @@ class Aplicacao:
             if chave != chave_ant:
                 chave_ant = chave
                 self.tela.desenhar()
+
