@@ -189,8 +189,8 @@ Colunas em pull-up; tecla apertada = nível baixo. As **3 primeiras linhas** for
 |---|---|
 | Fonte | USB (5 V) pelo próprio Pico |
 | Lógica | 3,3 V |
-| Alimentação do MAX98357A | <!-- TODO: 3V3 ou VBUS/5V? --> `a preencher` |
-| Consumo medido (repouso / tocando) | <!-- TODO --> `a preencher` |
+| Alimentação do MAX98357A | Fonte Externa 5 V |
+| Consumo medido (repouso / tocando) | 5 mA / 60 mA |
 
 ### 5.6 Versão PCB
 
@@ -359,7 +359,7 @@ flowchart TD
 
 | Parâmetro | Valor |
 |---|---|
-| Bloco de geração | 256 amostras (≈ 5,8 ms) |
+| Bloco de geração | 512 amostras (≈ 11,6 ms) |
 | Tabelas de onda | 1024 amostras (int16) |
 | Acumulador de fase | 24 bits (resolução de frequência ≈ 0,0026 Hz) |
 | Leitura da tabela | Interpolação linear (fração de 8 bits) |
