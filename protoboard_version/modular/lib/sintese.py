@@ -48,6 +48,16 @@ def _tabela(harmonicos, alvo_rms=None):
     return tab
 
 
+def _sem_sinal(tab):
+    """[LAÇO DUPLO] Cópia da tabela em 'H' com offset +32768 (0..65535).
+    A interpolação linear funciona igual nesse domínio, e o laço viper deixa de
+    precisar dos dois 'if' de correção de sinal por amostra."""
+    u = array.array('H', bytes(2 * TAM_TAB))
+    for i in range(TAM_TAB):
+        u[i] = tab[i] + 32768
+    return u
+
+
 tab_seno = _tabela([(1, 1.0)])
 RMS_PIANO = 14400   # [PIANO 2] mesmo RMS em todas as tabelas do piano
 tab_piano = _tabela([(1, 1.0), (2, 0.55), (3, 0.30), (4, 0.18), (5, 0.10), (6, 0.05)], RMS_PIANO)
@@ -61,8 +71,14 @@ tab_piano_grave = _tabela([(1, 1.0), (2, 0.70), (3, 0.50), (4, 0.35), (5, 0.25),
 tab_piano_agudo = _tabela([(1, 1.0), (2, 0.35), (3, 0.12), (4, 0.04)], RMS_PIANO)
 # Tabela "escura": a nota vai migrando da tabela rica para esta enquanto decai.
 tab_escura = _tabela([(1, 1.0), (2, 0.25)], RMS_PIANO)
+
+# [LAÇO DUPLO] versões sem sinal (offset +32768) usadas só pelo piano.
 # Índice = registro: 0 = oitava 3 (e abaixo), 1 = oitava 4, 2 e 3 = oitava 5 (e acima)
-TABS_RICAS = (tab_piano_grave, tab_piano, tab_piano_agudo, tab_piano_agudo)
+U_GRAVE = _sem_sinal(tab_piano_grave)
+U_MEDIA = _sem_sinal(tab_piano)
+U_AGUDO = _sem_sinal(tab_piano_agudo)
+U_ESCURA = _sem_sinal(tab_escura)
+TABS_RICAS_U = (U_GRAVE, U_MEDIA, U_AGUDO, U_AGUDO)
 
 # ---- [PIANO 3] tabela de ruído para a "martelada" -------------------------
 tab_ruido = array.array('h', bytes(2 * TAM_TAB))
@@ -72,14 +88,17 @@ for _i in range(TAM_TAB):
 # nome: (tabela, sustain/bloco, release/bloco, ataque (fração/bloco), nível Q12)
 # Obs.: o "Piano" usa o caminho próprio de gerar() (parâmetros PIANO abaixo);
 # a linha dele aqui só mantém o formato da tabela.
+# Todos os valores "por bloco" desta tabela e dos parâmetros do piano abaixo são
+# referidos a um bloco de 256 amostras; Sintese os escala para o bloco real.
 INSTR = {
     "Piano":        (tab_piano, 0.988, 0.55, 1.0, 2400),
     "Sintetizador": (tab_serra, 1.000, 0.72, 0.35, 1800),  # sustenta, ataque suave
     "Afinador":     (tab_seno,  1.000, 0.60, 0.50, 2400),  # senoide pura
 }
 GANHO_SINT = 2   # ganho extra do sintetizador em relação ao player
+BLOCO_REF = 256  # tamanho de bloco ao qual as constantes por bloco se referem
 
-# ---- Parâmetros do piano (1 bloco = 256 amostras = 5,8 ms a 44,1 kHz) -------
+# ---- Parâmetros do piano (referidos a 1 bloco de 256 amostras = 5,8 ms a 44,1 kHz) ----
 # [PIANO 1] decaimento em duas fases, por registro
 F_RAPIDO = 0.974                                  # fase rápida: tau ~0,22 s
 FATOR_LENTO = (0.9982, 0.9972, 0.9958, 0.9936)    # fase lenta: C3 3,2 s ... C6 0,9 s
@@ -99,14 +118,15 @@ DESAFINA = 1.0015                                 # ~2,5 cents
 CORDA2 = 0.35                                     # fatia da 2ª corda (desigual: o batimento
                                                   # vira ondulação, sem "apagar" a nota)
 # [PIANO 6] polifonia
-MAX_VOZES = 6
+MAX_VOZES = 4                                     # [LAÇO DUPLO] antes 6 (limita o pior caso de CPU)
 
 
 @micropython.viper
 def mix_voz(acc, n: int, tab, fase: int, passo: int, a0: int, a1: int) -> int:
-    """Soma n amostras de uma voz no acumulador int32 'acc'.
+    """Soma n amostras de uma voz no acumulador int32 'acc' (tabela com sinal, 'h').
     fase: acumulador de 24 bits; amplitude em Q12 com rampa linear a0 -> a1.
-    [PIANO 5] leitura da tabela com interpolação linear (menos granulação)."""
+    [PIANO 5] leitura da tabela com interpolação linear (menos granulação).
+    Usada pelos instrumentos simples e pela martelada do piano."""
     pa = ptr32(acc)
     pt = ptr16(tab)
     amp = a0 << 8
@@ -123,6 +143,45 @@ def mix_voz(acc, n: int, tab, fase: int, passo: int, a0: int, a1: int) -> int:
         s = s0 + (((s1 - s0) * fr) >> 8)
         pa[i] = int(pa[i]) + ((s * (amp >> 8)) >> 12)
         amp += step
+        fase = (fase + passo) & 0xFFFFFF
+    return fase
+
+
+@micropython.viper
+def mix_dupla(acc, n: int, tabA, tabB, fase: int, passo: int, par) -> int:
+    """[LAÇO DUPLO] Uma corda do piano: lê as tabelas A (rica) e B (escura) na MESMA
+    fase, num único laço. Troca 2 chamadas de mix_voz por 1 e calcula índice,
+    fração e fase uma vez só.
+    tabA/tabB: tabelas SEM sinal ('H', offset +32768), ver _sem_sinal().
+    par: array('i') de 4 posições = [a0A, a1A, a0B, a1B] (amplitudes Q12 inicial/final
+         de cada tabela; rampa linear no bloco). Vai num array para manter 7 argumentos,
+         como o mix_voz.
+    Retorna a nova fase (24 bits)."""
+    pa = ptr32(acc)
+    pA = ptr16(tabA)
+    pB = ptr16(tabB)
+    pp = ptr32(par)
+    a0 = int(pp[0])
+    a1 = int(pp[1])
+    b0 = int(pp[2])
+    b1 = int(pp[3])
+    ampA = a0 << 8
+    ampB = b0 << 8
+    stA = ((a1 - a0) << 8) // n
+    stB = ((b1 - b0) << 8) // n
+    for i in range(n):
+        k = fase >> 14
+        fr = (fase >> 6) & 255
+        k1 = (k + 1) & 1023
+        x0 = int(pA[k])
+        x1 = int(pA[k1])
+        y0 = int(pB[k])
+        y1 = int(pB[k1])
+        sA = x0 + (((x1 - x0) * fr) >> 8) - 32768
+        sB = y0 + (((y1 - y0) * fr) >> 8) - 32768
+        pa[i] = int(pa[i]) + ((sA * (ampA >> 8) + sB * (ampB >> 8)) >> 12)
+        ampA += stA
+        ampB += stB
         fase = (fase + passo) & 0xFFFFFF
     return fase
 
@@ -149,22 +208,44 @@ def finalizar(acc, out, n: int, ganho: int):
 
 
 class Sintese:
-    """Gera um bloco de áudio mono 16 bits a partir da lista de notas MIDI ligadas."""
+    """Gera um bloco de áudio mono 16 bits a partir da lista de notas MIDI ligadas.
+
+    bloco: amostras por bloco (256 = 5,8 ms, 512 = 11,6 ms a 44,1 kHz). As constantes
+    de envelope são dadas "por bloco de 256" e aqui são elevadas a (bloco/256), então o
+    tempo de decaimento/release/ataque em segundos NÃO muda com o tamanho do bloco."""
 
     def __init__(self, midi, bloco=256, taxa=SAMPLE_RATE):
         self.midi = midi
-        self.n = bloco                      # 256 amostras = ~5,8 ms a 44,1 kHz
+        self.n = bloco
         self.k = 16777216.0 / taxa          # 2^24 / taxa
         self.acc = array.array('i', [0] * bloco)
         self.out = bytearray(bloco * 2)
+        self.par = array.array('i', [0, 0, 0, 0])   # amplitudes passadas ao mix_dupla
+
+        e = bloco / BLOCO_REF
+        # piano
+        self.f_rapido = F_RAPIDO ** e
+        self.f_lento = tuple(f ** e for f in FATOR_LENTO)
+        self.f_brilho = F_BRILHO ** e
+        self.rel_piano = tuple(r ** e for r in REL_PIANO)
+        self.ruido_fator = RUIDO_FATOR ** e
+        # demais instrumentos: sustain e release multiplicam por bloco; o ataque é uma
+        # fração do caminho percorrido por bloco -> 1 - (1 - atk)^e
+        self.instr = {}
+        for nome in INSTR:
+            tab, sust, rel, atk, nivel = INSTR[nome]
+            self.instr[nome] = (tab, sust ** e, rel ** e, 1.0 - (1.0 - atk) ** e, nivel)
+
         # midi -> [fase, amp, ligada, estava_ligada, alvo_env,          (todos os instrumentos)
         #          a_rapida, a_lenta, exc_brilho, fase2, ruido]         (só o piano usa)
         self.vozes = {}
 
     def gerar(self, alvo, instr, ganho_volume):
-        tab, sust, rel, atk, nivel = INSTR[instr]
+        tab, sust, rel, atk, nivel = self.instr[instr]
         piano = instr == "Piano"
         n = self.n
+        acc = self.acc
+        par = self.par
         vozes = self.vozes
         if len(alvo) > MAX_VOZES:           # [PIANO 6] limite de polifonia
             alvo = alvo[:MAX_VOZES]
@@ -200,18 +281,18 @@ class Sintese:
                         if amp == 0.0:                      # voz nova: ataque imediato
                             amp = NIVEL_PIANO * ATAQUE_INICIAL
                     w0 = PISO_BRILHO + (1.0 - PISO_BRILHO) * v[7]
-                    v[5] *= F_RAPIDO                        # [PIANO 1]
-                    v[6] *= FATOR_LENTO[reg]                # [PIANO 1]
-                    v[7] *= F_BRILHO                        # [PIANO 2]
+                    v[5] *= self.f_rapido                   # [PIANO 1]
+                    v[6] *= self.f_lento[reg]               # [PIANO 1]
+                    v[7] *= self.f_brilho                   # [PIANO 2]
                     a1 = PESO_RAPIDO * v[5] + (1.0 - PESO_RAPIDO) * v[6]
                     w1 = PISO_BRILHO + (1.0 - PISO_BRILHO) * v[7]
                 else:                                       # tecla solta: release
-                    a1 = amp * REL_PIANO[reg]               # [PIANO 1]
+                    a1 = amp * self.rel_piano[reg]          # [PIANO 1]
                     w0 = w1 = PISO_BRILHO + (1.0 - PISO_BRILHO) * v[7]
                     if a1 < 8:
                         mortos.append(m)
 
-                rica = TABS_RICAS[reg]                      # [PIANO 5] tabela por registro
+                rica = TABS_RICAS_U[reg]                    # [PIANO 5] tabela por registro
                 passo2 = int(passo * DESAFINA)              # [PIANO 4] 2ª corda
                 h0 = amp * (1.0 - CORDA2)                   # corda 1 (65%)
                 h1 = a1 * (1.0 - CORDA2)
@@ -219,19 +300,22 @@ class Sintese:
                 g1 = a1 * CORDA2
                 f1 = v[0]
                 f2 = v[8]
-                # [PIANO 2 + 4] 2 cordas x (tabela rica + tabela escura), fases em par
-                v[0] = mix_voz(self.acc, n, rica, f1, passo,
-                               int(h0 * w0), int(h1 * w1))
-                mix_voz(self.acc, n, tab_escura, f1, passo,
-                        int(h0 * (1.0 - w0)), int(h1 * (1.0 - w1)))
-                v[8] = mix_voz(self.acc, n, rica, f2, passo2,
-                               int(g0 * w0), int(g1 * w1))
-                mix_voz(self.acc, n, tab_escura, f2, passo2,
-                        int(g0 * (1.0 - w0)), int(g1 * (1.0 - w1)))
+                # [PIANO 2 + 4] 2 cordas, cada uma = tabela rica + tabela escura num só laço
+                par[0] = int(h0 * w0)
+                par[1] = int(h1 * w1)
+                par[2] = int(h0 * (1.0 - w0))
+                par[3] = int(h1 * (1.0 - w1))
+                v[0] = mix_dupla(acc, n, rica, U_ESCURA, f1, passo, par)
+                par[0] = int(g0 * w0)
+                par[1] = int(g1 * w1)
+                par[2] = int(g0 * (1.0 - w0))
+                par[3] = int(g1 * (1.0 - w1))
+                v[8] = mix_dupla(acc, n, rica, U_ESCURA, f2, passo2, par)
                 if v[9] > 8:                                # [PIANO 3] martelada
-                    mix_voz(self.acc, n, tab_ruido, f1, PASSO_RUIDO,
-                            int(v[9]), int(v[9] * RUIDO_FATOR))
-                    v[9] *= RUIDO_FATOR
+                    rf = self.ruido_fator
+                    mix_voz(acc, n, tab_ruido, f1, PASSO_RUIDO,
+                            int(v[9]), int(v[9] * rf))
+                    v[9] *= rf
                 v[1] = a1
 
             else:
@@ -244,9 +328,9 @@ class Sintese:
                     a1 = amp * rel
                     if a1 < 8:
                         mortos.append(m)
-                v[0] = mix_voz(self.acc, n, tab, v[0], passo, int(amp), int(a1))
+                v[0] = mix_voz(acc, n, tab, v[0], passo, int(amp), int(a1))
                 v[1] = a1
         for m in mortos:
             del vozes[m]
-        finalizar(self.acc, self.out, n, ganho_volume * GANHO_SINT)
+        finalizar(acc, self.out, n, ganho_volume * GANHO_SINT)
         return self.out
