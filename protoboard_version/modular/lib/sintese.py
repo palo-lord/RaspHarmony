@@ -74,7 +74,7 @@ def finalizar(acc, out, n: int, ganho: int):
     pa = ptr32(acc)
     po = ptr16(out)
     for i in range(n):
-        v = (int(pa[i]) * ganho) >> 8
+        v = ((int(pa[i]) >> 2) * ganho) >> 10
         if v > 32767:
             v = 32767
         elif v < -32768:
@@ -126,3 +126,4 @@ class Sintese:
             del vozes[m]
         finalizar(self.acc, self.out, self.n, ganho_volume * GANHO_SINT)
         return self.out
+
