@@ -4,22 +4,123 @@
 # Nome: Paulo Sergio Gonçalves Júnior RA: 218474
 # Nome: Vinicius Pedrillo de Souza RA: 258667
 # ============================================================
-# Versão adaptada para o display OLED 128x64 (SSD1306).
+# VERSÃO MONOLÍTICA (arquivo único) - gerada a partir da versão
+# modular (protoboard_version/modular).
+# Dependências externas (copiar para o Pico): sh1106.py, sdcard.py
+#
+# Seções, na ordem:
+#   config, Encoder, Botao, Joystick, Teclado, armazenamento (SD),
+#   WavFile, SaidaAudio, MIDI, Sintese, Player, Estado, Tela, Aplicacao
 # ============================================================
-
-from machine import Pin, PWM, ADC, I2C, SPI, I2S, disable_irq, enable_irq
+from machine import Pin, ADC, I2C, SPI, I2S, disable_irq, enable_irq
 from sh1106 import SH1106_I2C
 import utime
 import math
 import array
+import gc
+import random
 import os
 import struct
-import time
-import sdcard
 import micropython
-import gc
+import sdcard
 
 micropython.alloc_emergency_exception_buf(100)  # permite ver erros dentro de IRQ
+
+
+
+# ==========================================================
+# [config]
+# ==========================================================
+# ============================================================
+# config.py - Pinos, constantes e tabelas de configuração
+# ============================================================
+
+# Joystick Analógico
+pin_JOY_X = 26
+pin_JOY_Y = 27
+pin_JOY_SW = 28
+
+# Encoder Rotativo
+pin_ENC_A = 13
+pin_ENC_B = 14
+pin_ENC_SW = 15
+
+# MAX98357 - I2S
+WS_PIN = 22   # Word Select (LRCK) - LRC
+SCK_PIN = 21  # Serial Clock (BCLK)
+SD_PIN = 20   # Serial Data (DIN / DOUT)
+
+# Teclado matricial
+row_pins = [12, 11, 10, 9]  # R1, R2, R3, R4
+col_pins = [8, 7, 6, 5]     # C1, C2, C3, C4
+
+# Mapeamento das teclas e notas do keypad 4x4
+key_notes = [
+    ["C", "C#", "D", "D#"],
+    ["E", "F", "F#", "G"],
+    ["G#", "A", "A#", "B"],
+    ["Reinicia", "Prev", "Play/Stop", "Next"]]
+
+# Display OLED (I2C)
+OLED_W = 128
+OLED_H = 64
+OLED_SCL = 1
+OLED_SDA = 0
+OLED_ADDR = 0x3C
+
+# Joystick
+INVERTE_X = True    # troque para True se o joystick navegar ao contrário
+INVERTE_Y = True
+LIMIAR = 12000       # sensibilidade para detectar movimento
+
+# Cartão SD (SPI)
+SD_MOUNT = "/sd"
+SD_SCK, SD_MOSI, SD_MISO, SD_CS = 18, 19, 16, 17
+TAM_BUFFER = 8192    # bytes lidos por vez do SD (múltiplo de 512 é ideal), 93ms
+REPETIR_LISTA = True
+
+# Estados do Player
+PARADO, TOCANDO, PAUSADO = 0, 1, 2
+
+# Áudio / I2S
+SAMPLE_RATE = 44100
+IBUF_SINT = 4096     # ~46.5 ms de latência no teclado
+IBUF_PLAYER = 32768   # ~372 ms de folga (mono); custa 16 KB a mais de RAM
+
+# Volume
+VOL_PASSO = 2        # % por clique do encoder
+VOLUME_INICIAL = 30
+
+# Interface - UI
+# O índice 4 (Acordes) é preenchido em estado.py, pois depende da lista de acordes.
+MODES = [
+    ["Teclado", "Player"],                          # 0: Menu Principal
+    ["Instrumento", "Acordes", "Afinador", "Menu"], # 1: Modo Teclado
+    ["Menu"],                                       # 2: Modo Player
+    ["Piano", "Sintetizador", "Teclado"],           # 3: Modo Instrumento
+    ["Teclado"],                                    # 4: Modo Acordes
+    ["Teclado"]]                                    # 5: Modo Afinador
+ESTADO_UI = ["Menu", "Teclado", "Player", "Instrumento", "Acordes", "Afinador"]
+
+DURACAO_ACORDE_MS = 1500
+
+# Afinador
+PASSO_CENTS = 1      # cents por clique do encoder
+LIM_CENTS = 50       # afinação limitada a +-50 cents
+
+# Grade vertical do display
+Y_INI = 11
+Y_PASSO = 9
+Y_NOTAS = 47
+Y_RODAPE = 56
+
+
+# ==========================================================
+# [encoder]
+# ==========================================================
+# ============================================================
+# encoder.py - Encoder rotativo em quadratura
+# ============================================================
 
 # Tabela de decodificação em quadratura.
 # Índice = (estado_anterior << 2) | estado_novo, com estado = (A << 1) | B.
@@ -28,11 +129,12 @@ _TAB_ENC = (0, 1, -1, 0,
             1, 0, 0, -1,
             0, -1, 1, 0)
 
+
 class Encoder:
     """Encoder rotativo em quadratura. A interrupção só acumula passos;
     o resto do programa lê com cliques(), sem nunca mexer em SD/I2S/OLED na IRQ."""
 
-    def __init__(self, pino_a, pino_b, passos_por_clique=4):
+    def __init__(self, pino_a, pino_b, passos_por_clique=2):
         self.a = pino_a
         self.b = pino_b
         self.ppc = passos_por_clique      # 4 para a maioria (KY-040); 2 ou 1 em outros
@@ -52,11 +154,19 @@ class Encoder:
         positivo = horário, negativo = anti-horário. Troque o sinal se o
         seu encoder estiver ligado ao contrário."""
         st = disable_irq()
-        c = self.contagem
+        c = -self.contagem
         n = c // self.ppc if c >= 0 else -((-c) // self.ppc)
         self.contagem = c - n * self.ppc   # guarda o resto de um clique incompleto
         enable_irq(st)
         return n
+
+
+# ==========================================================
+# [botao]
+# ==========================================================
+# ============================================================
+# botao.py - Botão com detecção de borda e debounce sem sleep
+# ============================================================
 
 
 class Botao:
@@ -80,212 +190,158 @@ class Botao:
         return evento
 
 
-# ===================== Inicialização ========================
-# Joystick Analógico ------------------------------
-pin_JOY_X = 26
-pin_JOY_Y = 27
-pin_JOY_SW = 28
+# ==========================================================
+# [joystick]
+# ==========================================================
+# ============================================================
+# joystick.py - Joystick analógico com botão
+# ============================================================
 
-# Encoder Rotativo --------------------------------
-pin_ENC_A = 13
-pin_ENC_B = 14
-pin_ENC_SW = 15
 
-# MAX98357 - I2S  ---------------------------------
-WS_PIN = 22   # Word Select (LRCK)- LRC
-SCK_PIN = 21  # Serial Clock (BCLK)
-SD_PIN = 20   # Serial Data (DIN /DOUT)
 
-# Teclado  ----------------------------------------
-row_pins = [12, 11, 10, 9] # R1, R2, R3, R4
-col_pins = [8, 7, 6, 5]   # C1, C2, C3, C4
+class Joystick:
+    def __init__(self, pin_x, pin_y, pin_sw, limiar=12000,
+                 inverte_x=True, inverte_y=True):
+        self.sw = Pin(pin_sw, Pin.IN, Pin.PULL_UP)
+        self.adc_x = ADC(Pin(pin_x))
+        self.adc_y = ADC(Pin(pin_y))
+        self.botao = Botao(self.sw)
+        self.limiar = limiar
+        self.inverte_x = inverte_x
+        self.inverte_y = inverte_y
+        self.neutra_x = True
+        self.neutra_y = True
 
-# Mapeamento das teclas e notas do keypad 4x4 -----
-key_notes = [
-    ["C", "C#", "D", "D#"],
-    ["E", "F", "F#", "G"],
-    ["G#", "A", "A#", "B"],
-    ["Reinicia", "Prev", "Play/Stop", "Next"]]
+        utime.sleep_ms(100)  # calibração do centro do joystick
+        self.centro_x = self.adc_x.read_u16()
+        self.centro_y = self.adc_y.read_u16()
 
-# Interface - UI  ---------------------------------
-MODES = [
-    ["Teclado", "Player"],                          # 0: Menu Principal
-    ["Instrumento", "Acordes", "Afinador", "Menu"], # 1: Modo Teclado
-    ["Menu"],                                       # 2: Modo Player
-    ["Piano", "Sintetizador", "Teclado"],           # 3: Modo Instrumento
-    ["Teclado"],                                    # 4: Modo Acordes (lista é montada mais abaixo)
-    ["Teclado"]]                                    # 5: Modo Afinador
-ESTADO_UI = ["Menu", "Teclado", "Player", "Instrumento", "Acordes", "Afinador"]
-mode_ui = 0 # Interface Inicial
-mode_sel = 0
+    def ler(self):
+        """Retorna (x, movimento_x, movimento_y).
+        x = desvio analógico em X (para o 'pular' do Player);
+        movimento_x/y = -1, 0 ou +1, UM evento por empurrão (com histerese)."""
+        x = self.centro_x - self.adc_x.read_u16()
+        y = self.centro_y - self.adc_y.read_u16()
+        if self.inverte_x:
+            x = -x
+        if self.inverte_y:
+            y = -y
 
-# ===================== Configurações ========================
+        lim = self.limiar
+        movimento_x = 0
+        movimento_y = 0
 
-# Joystick Analógico -----------------------------------------
-joy_sw = Pin(pin_JOY_SW, Pin.IN, Pin.PULL_UP)
-joy_x = ADC(Pin(pin_JOY_X))
-joy_y = ADC(Pin(pin_JOY_Y))
-btn_joy = Botao(joy_sw)
-INVERTE_X = False    # troque para True se o joystick navegar ao contrário
-INVERTE_Y = False
+        if self.neutra_x:
+            if x > lim:
+                movimento_x = 1
+                self.neutra_x = False
+            elif x < -lim:
+                movimento_x = -1
+                self.neutra_x = False
+        elif abs(x) < lim // 3:
+            self.neutra_x = True
 
-utime.sleep_ms(100) # Calibracao do centro do joystick
-centro_x = joy_x.read_u16()
-centro_y = joy_y.read_u16()
-LIMIAR = 12000       # sensibilidade para detectar movimento
-zona_neutra_x = True
-zona_neutra_y = True
+        if self.neutra_y:
+            if y > lim:
+                movimento_y = 1
+                self.neutra_y = False
+            elif y < -lim:
+                movimento_y = -1
+                self.neutra_y = False
+        elif abs(y) < lim // 3:
+            self.neutra_y = True
 
-# Encoder Rotativo -------------------------------------------
-enc_a = Pin(pin_ENC_A, Pin.IN, Pin.PULL_UP)
-enc_b = Pin(pin_ENC_B, Pin.IN, Pin.PULL_UP)
-enc_sw = Pin(pin_ENC_SW, Pin.IN, Pin.PULL_UP)
+        return (x, movimento_x, movimento_y)
 
-enc = Encoder(enc_a, enc_b)
-btn_enc = Botao(enc_sw)
+    def clicou(self):
+        return self.botao.pressionado()
 
-# Teclado ------------------ ---------------------------------
-rows = [Pin(pin, Pin.OUT) for pin in row_pins]
-cols = [Pin(pin, Pin.IN, Pin.PULL_DOWN) for pin in col_pins]
 
-# Display OLED - I2C (128x64) --------------------------------
-# Cada oled.show() envia 1 KB (128x64 / 8). Se quiser atualizar mais rápido, tente freq=1000000.
-OLED_W = 128
-OLED_H = 64
-i2c_oled = I2C(0, scl=Pin(1), sda=Pin(0), freq=400000)
-oled = SH1106_I2C(OLED_W, OLED_H, i2c_oled, addr=0x3C, rotate=180)
+# ==========================================================
+# [teclado]
+# ==========================================================
+# ============================================================
+# teclado.py - Teclado matricial 4x4
+# ============================================================
 
-# Cartão SD - SPI --------------------------------------------
-SD_MOUNT = "/sd"
-TAM_BUFFER = 2048 # bytes lidos por vez do SD (múltiplo de 512 é ideal)
-REPETIR_LISTA = True
+SETTLE_US = 20   # tempo para a coluna estabilizar depois de ativar a linha
 
-spi_SD = SPI(0,
-    baudrate=1000000,
-    polarity=0,
-    phase=0,
-    sck=Pin(18),
-    mosi=Pin(19),
-    miso=Pin(16)
-)
-cs = Pin(17, Pin.OUT)
-cs.value(1) # Desativa o dispositivo inicialmente
 
-# Se o cartão não estiver presente, o Teclado continua funcionando
-# (só o Player fica sem faixas).
-try:
-    sd = sdcard.SDCard(spi_SD, cs)
+class Teclado:
+    """Matriz 4x4 ativa em nível baixo: colunas com PULL_UP, tecla apertada = 0.
+
+    As linhas ficam em ALTA IMPEDÂNCIA (entrada) em repouso e só a linha que está
+    sendo varrida é levada a 0 V. Assim uma tecla fechada em outra linha (por exemplo
+    as multimídia) não puxa nenhuma coluna para baixo, e duas teclas apertadas na
+    mesma coluna (C e E, por exemplo) não colocam uma linha em 0 contra outra em 1."""
+
+    def __init__(self, row_pins, col_pins, key_notes):
+        self.key_notes = key_notes
+        self.rows = [Pin(p, Pin.IN) for p in row_pins]
+        self.cols = [Pin(p, Pin.IN, Pin.PULL_UP) for p in col_pins]
+
+    def _colunas_pressionadas(self, r_idx):
+        """Índices das colunas com tecla apertada na linha r_idx."""
+        row = self.rows[r_idx]
+        row.init(Pin.OUT, value=0)
+        utime.sleep_us(SETTLE_US)
+        achadas = [c for c, col in enumerate(self.cols) if col.value() == 0]
+        row.init(Pin.IN)               # volta para alta impedância
+        return achadas
+
+    def scan(self, flag_teclado):
+        """flag_teclado=True: varre as 3 primeiras linhas e retorna a lista de notas.
+        flag_teclado=False: varre a última linha (multimídia) e retorna a tecla ou None."""
+        if flag_teclado:
+            lista = []
+            for r_idx in range(3):
+                for c_idx in self._colunas_pressionadas(r_idx):
+                    lista.append(self.key_notes[r_idx][c_idx])
+            return lista
+
+        colunas = self._colunas_pressionadas(3)
+        if colunas:
+            return self.key_notes[3][colunas[0]]
+        return None
+
+
+# ==========================================================
+# [armazenamento]
+# ==========================================================
+# ============================================================
+# armazenamento.py - Cartão SD (SPI): montagem e lista de WAVs
+# ============================================================
+
+
+def montar_sd(sck, mosi, miso, cs_pin, ponto_montagem):
+    """Monta o SD e retorna a lista de caminhos .wav.
+    Se o cartão não estiver presente, retorna lista vazia (o Teclado continua funcionando)."""
+    spi = SPI(0, baudrate=8000000, polarity=0, phase=0,
+              sck=Pin(sck), mosi=Pin(mosi), miso=Pin(miso))
+    cs = Pin(cs_pin, Pin.OUT)
+    cs.value(1)  # Desativa o dispositivo inicialmente
+
     try:
-        os.mount(sd, SD_MOUNT)
-    except OSError:
-        pass  # já montado
-    ARQUIVOS = [SD_MOUNT + "/" + nome for nome in sorted(os.listdir(SD_MOUNT))
+        sd = sdcard.SDCard(spi, cs)
+        try:
+            os.mount(sd, ponto_montagem)
+        except OSError:
+            pass  # já montado
+        return [ponto_montagem + "/" + nome
+                for nome in sorted(os.listdir(ponto_montagem))
                 if nome.lower().endswith(".wav")]
-except Exception as e:
-    print("SD indisponivel:", e)
-    ARQUIVOS = []
-PARADO, TOCANDO, PAUSADO = 0, 1, 2
-
-# I2S para saída de áudio (MAX98357A) -----------------------------------
-SAMPLE_RATE = 44100
-IBUF_SINT = 4096      # ~93 ms de latência no teclado (menor = mais rápido, mas o display pode causar falhas)
-IBUF_PLAYER = 8192    # ~186 ms: folga para o display atualizar sem falhar o áudio
-i2s_max = None
-_cfg_i2s = None
+    except Exception as e:
+        print("SD indisponivel:", e)
+        return []
 
 
-def abrir_i2s(taxa, canais, ibuf):
-    """(Re)cria o I2S só se a configuração mudou."""
-    global i2s_max, _cfg_i2s
-    cfg = (taxa, canais, ibuf)
-    if cfg == _cfg_i2s:
-        return
-    if i2s_max is not None:
-        i2s_max.deinit()
-    i2s_max = I2S(0,
-        sck=Pin(SCK_PIN),
-        ws=Pin(WS_PIN),
-        sd=Pin(SD_PIN),
-        mode=I2S.TX,
-        rate=taxa,
-        bits=16,
-        format=I2S.STEREO if canais == 2 else I2S.MONO,
-        ibuf=ibuf)
-    _cfg_i2s = cfg
+# ==========================================================
+# [wavfile]
+# ==========================================================
+# ============================================================
+# wavfile.py - Leitura de arquivos WAV PCM
+# ============================================================
 
-
-abrir_i2s(SAMPLE_RATE, 1, IBUF_SINT)
-SILENCIO = bytearray(512)
-
-# ===================== Funções ========================
-
-def key_notes_scan(flag_teclado):
-    if flag_teclado:
-        List = []
-        for r_idx, row in enumerate(rows):
-            if (r_idx == 3):
-                # No modo teclado varre as 3 primeiras linhas
-                continue
-            row.high()
-            for c_idx, col in enumerate(cols):
-                if col.value() == 1:
-                    List.append(key_notes[r_idx][c_idx])
-            row.low()
-        return List
-
-    else: # Player
-        for r_idx, row in enumerate(rows):
-            if not (r_idx == 3):
-                # No modo player varre a última linha
-                continue
-            row.high()
-            for c_idx, col in enumerate(cols):
-                if col.value() == 1:
-                    row.low()
-                    return key_notes[r_idx][c_idx]
-            row.low()
-    return None
-
-def joystick_sense(): # ---------- Leitura do joystick ----------
-    """Retorna (x, movimento_x, movimento_y).
-    x = desvio analógico em X (para o 'pular' do Player);
-    movimento_x/y = -1, 0 ou +1, UM evento por empurrão (com histerese)."""
-    global zona_neutra_x, zona_neutra_y
-    raw_x = joy_x.read_u16()
-    raw_y = joy_y.read_u16()
-    x = centro_x - raw_x
-    y = centro_y - raw_y
-    if INVERTE_X:
-        x = -x
-    if INVERTE_Y:
-        y = -y
-
-    movimento_x = 0
-    movimento_y = 0
-
-    if zona_neutra_x:
-        if x > LIMIAR:
-            movimento_x = 1
-            zona_neutra_x = False
-        elif x < -LIMIAR:
-            movimento_x = -1
-            zona_neutra_x = False
-    else:
-        if abs(x) < LIMIAR // 3:
-            zona_neutra_x = True
-
-    if zona_neutra_y:
-        if y > LIMIAR:
-            movimento_y = 1
-            zona_neutra_y = False
-        elif y < -LIMIAR:
-            movimento_y = -1
-            zona_neutra_y = False
-    else:
-        if abs(y) < LIMIAR // 3:
-            zona_neutra_y = True
-
-    return (x, movimento_x, movimento_y)
 
 class WavFile:
     """Abre um WAV, interpreta o cabeçalho e permite ler os dados em blocos."""
@@ -389,27 +445,23 @@ class WavFile:
         self.f.close()
 
 
-# ---------------------------------------------------------------------------
-# Volume por software (o MAX98357A não tem controle de volume por I2S)
-# ---------------------------------------------------------------------------
-VOL_PASSO = 5                 # % por clique do encoder
-volume = 50                   # 0..100 (%)
+# ==========================================================
+# [audio]
+# ==========================================================
+# ============================================================
+# audio.py - Saída de áudio I2S (MAX98357A) e volume por software
+# ============================================================
 
+
+SILENCIO = bytearray(512)
+GANHO_UNIT = 4096
 
 def calcula_ganho(vol):
     """Percentual -> ganho em ponto fixo (256 = 1.0). Curva quadrática."""
-    return vol * vol * 256 // 10000
-
-
-ganho_volume = calcula_ganho(volume)
-
-
-def ajustar_volume(delta):
-    global volume, ganho_volume
-    if delta:
-        volume = max(0, min(100, volume + delta * VOL_PASSO))
-        ganho_volume = calcula_ganho(volume)
-
+    g = vol * vol * GANHO_UNIT // 10000
+    if vol > 0 and g < 1:
+        g = 1
+    return g
 
 @micropython.viper
 def aplicar_volume(buf, n: int, ganho: int):
@@ -419,22 +471,77 @@ def aplicar_volume(buf, n: int, ganho: int):
         s = int(p[i])
         if s >= 32768:       # amostra com sinal
             s -= 65536
-        p[i] = ((s * ganho) >> 8) & 0xFFFF
+        p[i] = ((s * ganho) >> 12) & 0xFFFF
 
 
-def saida_audio(dados, n, wav):
-    """Envia os bytes PCM lidos do WAV ao amplificador via I2S, com volume.
-    Reconfigura o I2S automaticamente se a taxa/canais do WAV forem diferentes."""
-    if (wav.taxa, wav.canais, IBUF_PLAYER) != _cfg_i2s:
-        abrir_i2s(wav.taxa, wav.canais, IBUF_PLAYER)
-    if ganho_volume != 256:
-        aplicar_volume(dados, n, ganho_volume)
-    i2s_max.write(dados)
+class SaidaAudio:
+    """Gerencia o I2S e o volume (o MAX98357A não tem controle de volume por I2S)."""
+
+    def __init__(self):
+        self.i2s = None
+        self._cfg = None
+        self.volume = VOLUME_INICIAL          # 0..100 (%)
+        self.ganho = calcula_ganho(self.volume)
+        self.mudo = False
+        
+    def _atualiza_ganho(self):
+        self.ganho = 0 if self.mudo else calcula_ganho(self.volume)
+
+    def alternar_mudo(self):
+        self.mudo = not self.mudo
+        self._atualiza_ganho()
+
+    def desmutar(self):
+        self.mudo = False
+        self._atualiza_ganho()
+
+    def abrir(self, taxa, canais, ibuf):
+        """(Re)cria o I2S só se a configuração mudou."""
+        cfg = (taxa, canais, ibuf)
+        if cfg == self._cfg:
+            return
+        if self.i2s is not None:
+            self.i2s.deinit()
+        self.i2s = I2S(0,
+            sck=Pin(SCK_PIN),
+            ws=Pin(WS_PIN),
+            sd=Pin(SD_PIN),
+            mode=I2S.TX,
+            rate=taxa,
+            bits=16,
+            format=I2S.STEREO if canais == 2 else I2S.MONO,
+            ibuf=ibuf)
+        self._cfg = cfg
+
+    def ajustar_volume(self, delta):
+        if delta:
+            self.volume = max(0, min(100, self.volume + delta * VOL_PASSO))            
+            self.mudo = False
+            
+            self._atualiza_ganho()
+
+    def escrever(self, dados):
+        self.i2s.write(dados)
+
+    def saida_wav(self, dados, n, wav):
+        """Callback do Player: envia PCM do WAV ao amplificador, com volume.
+        Reconfigura o I2S automaticamente se taxa/canais do WAV forem diferentes."""
+        if (wav.taxa, wav.canais, IBUF_PLAYER) != self._cfg:
+            self.abrir(wav.taxa, wav.canais, IBUF_PLAYER)
+        if self.ganho != GANHO_UNIT:
+            aplicar_volume(dados, n, self.ganho)
+        self.i2s.write(dados)
 
 
-# ---------------------------------------------------------------------------
-# MIDI / notas / acordes
-# ---------------------------------------------------------------------------
+# ==========================================================
+# [midi]
+# ==========================================================
+# ============================================================
+# midi.py - Notas, frequências, acordes e escalas
+# ============================================================
+
+
+
 class MIDI:
     NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
@@ -512,7 +619,7 @@ class MIDI:
 
     def wave_gen(self, frequencia, duracao_ms, volume=0.2):
         """Gera um buffer PCM 16-bit com uma senoide (mantido da versão anterior;
-        o teclado agora usa o motor 'Sintese', que é bem mais rápido)."""
+        o teclado usa o motor 'Sintese', que é bem mais rápido)."""
         num_amostras = int(self.sample_rate * (duracao_ms / 1000.0))
         if frequencia == 0:
             return bytearray(num_amostras * 2)
@@ -525,36 +632,50 @@ class MIDI:
         return amostras
 
 
-midi = MIDI(root_base_midi=60, sample_rate=SAMPLE_RATE)
 NOTAS = MIDI.NOTE_NAMES
 
-# Lista de acordes: 12 raízes x 4 tipos, agrupados por raiz (+ "Teclado" para voltar)
+# Lista de acordes: 12 raízes x 4 tipos, agrupados por raiz
 ACORDES_LISTA = [NOTAS[r] + " " + t for r in range(12) for t in MIDI.CHORD_TYPES]
-MODES[4] = ACORDES_LISTA + ["Teclado"]
-DURACAO_ACORDE_MS = 1500
+
+midi = MIDI(root_base_midi=60, sample_rate=SAMPLE_RATE)
 
 
-# ---------------------------------------------------------------------------
-# Motor de síntese polifônico (tabela de onda + envelope, mixagem em viper)
-# ---------------------------------------------------------------------------
+# ==========================================================
+# [sintese]
+# ==========================================================
+# ============================================================
+# sintese.py - Motor de síntese polifônico (tabela de onda + envelope)
+# ============================================================
+
+
 TAM_TAB = 1024
 
 
-def _tabela(harmonicos):
+def _tabela(harmonicos, alvo_rms=None):
     """Tabela de 1024 amostras (int16) somando harmônicos [(n, amplitude), ...].
-    Usa duas passadas para não criar listas temporárias de floats."""
+    Usa duas passadas para não criar listas temporárias de floats.
+    alvo_rms=None: normaliza o PICO em 30000 (comportamento original).
+    alvo_rms=N:    normaliza a energia (RMS) em N, limitando o pico a 32000,
+                   para tabelas diferentes terem o mesmo volume percebido."""
     gc.collect()
     w = 2 * math.pi / TAM_TAB
 
-    # Passada 1: só descobre o pico
+    # Passada 1: descobre o pico (e a energia)
     pico = 0.0
+    soma2 = 0.0
     for i in range(TAM_TAB):
         s = 0.0
         for h, a in harmonicos:
             s += a * math.sin(w * h * i)
         if abs(s) > pico:
             pico = abs(s)
-    k = 30000 / pico
+        soma2 += s * s
+    if alvo_rms is None:
+        k = 30000 / pico
+    else:
+        k = alvo_rms / math.sqrt(soma2 / TAM_TAB)
+        if pico * k > 32000:
+            k = 32000 / pico
 
     # Passada 2: grava direto no array de 2 KB
     tab = array.array('h', bytes(2 * TAM_TAB))
@@ -566,33 +687,140 @@ def _tabela(harmonicos):
     return tab
 
 
+def _sem_sinal(tab):
+    """[LAÇO DUPLO] Cópia da tabela em 'H' com offset +32768 (0..65535).
+    A interpolação linear funciona igual nesse domínio, e o laço viper deixa de
+    precisar dos dois 'if' de correção de sinal por amostra."""
+    u = array.array('H', bytes(2 * TAM_TAB))
+    for i in range(TAM_TAB):
+        u[i] = tab[i] + 32768
+    return u
+
+
 tab_seno = _tabela([(1, 1.0)])
-tab_piano = _tabela([(1, 1.0), (2, 0.55), (3, 0.30), (4, 0.18), (5, 0.10), (6, 0.05)])
-tab_serra = _tabela([(h, 1.0 / h) for h in range(1, 11)])   # "serra" suave (sem aliasing até B5)
+RMS_PIANO = 14400   # [PIANO 2] mesmo RMS em todas as tabelas do piano
+tab_piano = _tabela([(1, 1.0), (2, 0.55), (3, 0.30), (4, 0.18), (5, 0.10), (6, 0.05)], RMS_PIANO)
+tab_serra = _tabela([(h, 1.0 / h) for h in range(1, 11)])   # "serra" suave
+
+# ---- [PIANO 2 e 5] tabelas extras do piano --------------------------------
+# tab_piano (acima) passa a ser a tabela "média" (oitava 4).
+# Graves: mais harmônicos. Agudos: poucos (evita som estridente/aliasing).
+tab_piano_grave = _tabela([(1, 1.0), (2, 0.70), (3, 0.50), (4, 0.35), (5, 0.25),
+                           (6, 0.18), (7, 0.12), (8, 0.08), (9, 0.05), (10, 0.03)], RMS_PIANO)
+tab_piano_agudo = _tabela([(1, 1.0), (2, 0.35), (3, 0.12), (4, 0.04)], RMS_PIANO)
+# Tabela "escura": a nota vai migrando da tabela rica para esta enquanto decai.
+tab_escura = _tabela([(1, 1.0), (2, 0.25)], RMS_PIANO)
+
+# [LAÇO DUPLO] versões sem sinal (offset +32768) usadas só pelo piano.
+# Índice = registro: 0 = oitava 3 (e abaixo), 1 = oitava 4, 2 e 3 = oitava 5 (e acima)
+U_GRAVE = _sem_sinal(tab_piano_grave)
+U_MEDIA = _sem_sinal(tab_piano)
+U_AGUDO = _sem_sinal(tab_piano_agudo)
+U_ESCURA = _sem_sinal(tab_escura)
+TABS_RICAS_U = (U_GRAVE, U_MEDIA, U_AGUDO, U_AGUDO)
+
+# ---- [PIANO 3] tabela de ruído para a "martelada" -------------------------
+tab_ruido = array.array('h', bytes(2 * TAM_TAB))
+for _i in range(TAM_TAB):
+    tab_ruido[_i] = random.getrandbits(15) - 16384
 
 # nome: (tabela, sustain/bloco, release/bloco, ataque (fração/bloco), nível Q12)
+# Obs.: o "Piano" usa o caminho próprio de gerar() (parâmetros PIANO abaixo);
+# a linha dele aqui só mantém o formato da tabela.
+# Todos os valores "por bloco" desta tabela e dos parâmetros do piano abaixo são
+# referidos a um bloco de 256 amostras; Sintese os escala para o bloco real.
 INSTR = {
-    "Piano":        (tab_piano, 0.988, 0.55, 1.0, 2400),   # decai sozinho enquanto a tecla está apertada
+    "Piano":        (tab_piano, 0.988, 0.55, 1.0, 2400),
     "Sintetizador": (tab_serra, 1.000, 0.72, 0.35, 1800),  # sustenta, ataque suave
     "Afinador":     (tab_seno,  1.000, 0.60, 0.50, 2400),  # senoide pura
 }
 GANHO_SINT = 2   # ganho extra do sintetizador em relação ao player
+BLOCO_REF = 256  # tamanho de bloco ao qual as constantes por bloco se referem
+
+# ---- Parâmetros do piano (referidos a 1 bloco de 256 amostras = 5,8 ms a 44,1 kHz) ----
+# [PIANO 1] decaimento em duas fases, por registro
+F_RAPIDO = 0.974                                  # fase rápida: tau ~0,22 s
+FATOR_LENTO = (0.9982, 0.9972, 0.9958, 0.9936)    # fase lenta: C3 3,2 s ... C6 0,9 s
+PESO_RAPIDO = 0.6                                 # peso da fase rápida na amplitude
+REL_PIANO = (0.70, 0.65, 0.60, 0.55)              # release por registro (grave dura mais)
+# [PIANO 2] brilho que decai
+F_BRILHO = 0.968                                  # tau ~0,18 s
+PISO_BRILHO = 0.25                                # nunca vira senoide pura
+# [PIANO 3] ataque e martelada
+NIVEL_PIANO = 1700                                # nível Q12 por voz (antes 2400)
+ATAQUE_INICIAL = 0.9                              # fração do nível já no 1º bloco
+RUIDO_NIVEL = 0.10                                # martelada = 10% do nível
+RUIDO_FATOR = 0.6                                 # cai ~17 ms
+PASSO_RUIDO = 10368889                            # ~0,618 * 2^24 (não repete padrão)
+# [PIANO 4] duas cordas
+DESAFINA = 1.0015                                 # ~2,5 cents
+CORDA2 = 0.35                                     # fatia da 2ª corda (desigual: o batimento
+                                                  # vira ondulação, sem "apagar" a nota)
+# [PIANO 6] polifonia
+MAX_VOZES = 4                                     # [LAÇO DUPLO] antes 6 (limita o pior caso de CPU)
 
 
 @micropython.viper
 def mix_voz(acc, n: int, tab, fase: int, passo: int, a0: int, a1: int) -> int:
-    """Soma n amostras de uma voz no acumulador int32 'acc'.
-    fase: acumulador de 24 bits; amplitude em Q12 com rampa linear a0 -> a1."""
+    """Soma n amostras de uma voz no acumulador int32 'acc' (tabela com sinal, 'h').
+    fase: acumulador de 24 bits; amplitude em Q12 com rampa linear a0 -> a1.
+    [PIANO 5] leitura da tabela com interpolação linear (menos granulação).
+    Usada pelos instrumentos simples e pela martelada do piano."""
     pa = ptr32(acc)
     pt = ptr16(tab)
     amp = a0 << 8
     step = ((a1 - a0) << 8) // n
     for i in range(n):
-        s = int(pt[fase >> 14])
-        if s >= 32768:
-            s -= 65536
+        k = fase >> 14                    # índice (10 bits)
+        fr = (fase >> 6) & 255            # fração entre amostras (8 bits)
+        s0 = int(pt[k])
+        s1 = int(pt[(k + 1) & 1023])
+        if s0 >= 32768:
+            s0 -= 65536
+        if s1 >= 32768:
+            s1 -= 65536
+        s = s0 + (((s1 - s0) * fr) >> 8)
         pa[i] = int(pa[i]) + ((s * (amp >> 8)) >> 12)
         amp += step
+        fase = (fase + passo) & 0xFFFFFF
+    return fase
+
+
+@micropython.viper
+def mix_dupla(acc, n: int, tabA, tabB, fase: int, passo: int, par) -> int:
+    """[LAÇO DUPLO] Uma corda do piano: lê as tabelas A (rica) e B (escura) na MESMA
+    fase, num único laço. Troca 2 chamadas de mix_voz por 1 e calcula índice,
+    fração e fase uma vez só.
+    tabA/tabB: tabelas SEM sinal ('H', offset +32768), ver _sem_sinal().
+    par: array('i') de 4 posições = [a0A, a1A, a0B, a1B] (amplitudes Q12 inicial/final
+         de cada tabela; rampa linear no bloco). Vai num array para manter 7 argumentos,
+         como o mix_voz.
+    Retorna a nova fase (24 bits)."""
+    pa = ptr32(acc)
+    pA = ptr16(tabA)
+    pB = ptr16(tabB)
+    pp = ptr32(par)
+    a0 = int(pp[0])
+    a1 = int(pp[1])
+    b0 = int(pp[2])
+    b1 = int(pp[3])
+    ampA = a0 << 8
+    ampB = b0 << 8
+    stA = ((a1 - a0) << 8) // n
+    stB = ((b1 - b0) << 8) // n
+    for i in range(n):
+        k = fase >> 14
+        fr = (fase >> 6) & 255
+        k1 = (k + 1) & 1023
+        x0 = int(pA[k])
+        x1 = int(pA[k1])
+        y0 = int(pB[k])
+        y1 = int(pB[k1])
+        sA = x0 + (((x1 - x0) * fr) >> 8) - 32768
+        sB = y0 + (((y1 - y0) * fr) >> 8) - 32768
+        pa[i] = int(pa[i]) + ((sA * (ampA >> 8) + sB * (ampB >> 8)) >> 12)
+        ampA += stA
+        ampB += stB
         fase = (fase + passo) & 0xFFFFFF
     return fase
 
@@ -603,7 +831,13 @@ def finalizar(acc, out, n: int, ganho: int):
     pa = ptr32(acc)
     po = ptr16(out)
     for i in range(n):
-        v = (int(pa[i]) * ganho) >> 8
+        v = ((int(pa[i]) >> 2) * ganho) >> 10
+        # [PIANO 6] joelho suave: acima de 16384 a inclinação cai para 1/8,
+        # em vez de cortar seco (acordes e volume alto distorciam).
+        if v > 16384:
+            v = 16384 + ((v - 16384) >> 3)
+        elif v < -16384:
+            v = -16384 + ((v + 16384) >> 3)
         if v > 32767:
             v = 32767
         elif v < -32768:
@@ -613,61 +847,149 @@ def finalizar(acc, out, n: int, ganho: int):
 
 
 class Sintese:
-    """Gera um bloco de áudio mono 16 bits a partir da lista de notas MIDI ligadas."""
+    """Gera um bloco de áudio mono 16 bits a partir da lista de notas MIDI ligadas.
+
+    bloco: amostras por bloco (256 = 5,8 ms, 512 = 11,6 ms a 44,1 kHz). As constantes
+    de envelope são dadas "por bloco de 256" e aqui são elevadas a (bloco/256), então o
+    tempo de decaimento/release/ataque em segundos NÃO muda com o tamanho do bloco."""
 
     def __init__(self, midi, bloco=256, taxa=SAMPLE_RATE):
         self.midi = midi
-        self.n = bloco                      # 256 amostras = ~11,6 ms
+        self.n = bloco
         self.k = 16777216.0 / taxa          # 2^24 / taxa
         self.acc = array.array('i', [0] * bloco)
         self.out = bytearray(bloco * 2)
-        self.vozes = {}   # midi -> [fase, amp, ligada, estava_ligada, alvo_env]
+        self.par = array.array('i', [0, 0, 0, 0])   # amplitudes passadas ao mix_dupla
 
-    def gerar(self, alvo, instr):
-        tab, sust, rel, atk, nivel = INSTR[instr]
+        e = bloco / BLOCO_REF
+        # piano
+        self.f_rapido = F_RAPIDO ** e
+        self.f_lento = tuple(f ** e for f in FATOR_LENTO)
+        self.f_brilho = F_BRILHO ** e
+        self.rel_piano = tuple(r ** e for r in REL_PIANO)
+        self.ruido_fator = RUIDO_FATOR ** e
+        # demais instrumentos: sustain e release multiplicam por bloco; o ataque é uma
+        # fração do caminho percorrido por bloco -> 1 - (1 - atk)^e
+        self.instr = {}
+        for nome in INSTR:
+            tab, sust, rel, atk, nivel = INSTR[nome]
+            self.instr[nome] = (tab, sust ** e, rel ** e, 1.0 - (1.0 - atk) ** e, nivel)
+
+        # midi -> [fase, amp, ligada, estava_ligada, alvo_env,          (todos os instrumentos)
+        #          a_rapida, a_lenta, exc_brilho, fase2, ruido]         (só o piano usa)
+        self.vozes = {}
+
+    def gerar(self, alvo, instr, ganho_volume):
+        tab, sust, rel, atk, nivel = self.instr[instr]
+        piano = instr == "Piano"
+        n = self.n
+        acc = self.acc
+        par = self.par
         vozes = self.vozes
+        if len(alvo) > MAX_VOZES:           # [PIANO 6] limite de polifonia
+            alvo = alvo[:MAX_VOZES]
         for v in vozes.values():
             v[3] = v[2]
             v[2] = False
         for m in alvo:
             v = vozes.get(m)
             if v is None:
-                vozes[m] = [0, 0.0, True, False, nivel]
+                vozes[m] = [0, 0.0, True, False, nivel, 0.0, 0.0, 1.0, 0, 0.0]
             else:
                 v[2] = True
         mortos = []
         for m in vozes:
             v = vozes[m]
             amp = v[1]
-            if v[2]:
-                if not v[3]:
-                    v[4] = nivel          # novo ataque
-                v[4] *= sust
-                a1 = amp + (v[4] - amp) * atk
-            else:
-                a1 = amp * rel
-                if a1 < 8:
-                    mortos.append(m)
             passo = int(self.midi.freq_afinada(m) * self.k)
-            v[0] = mix_voz(self.acc, self.n, tab, v[0], passo, int(amp), int(a1))
-            v[1] = a1
+
+            if piano:
+                # registro: 0 = oitava 3 ... 3 = oitava 6
+                reg = (m - 48) // 12
+                if reg < 0:
+                    reg = 0
+                elif reg > 3:
+                    reg = 3
+
+                if v[2]:                                    # tecla apertada
+                    if not v[3]:                            # novo ataque
+                        v[5] = NIVEL_PIANO                  # [PIANO 1] fase rápida
+                        v[6] = NIVEL_PIANO                  # [PIANO 1] fase lenta
+                        v[7] = 1.0                          # [PIANO 2] brilho máximo
+                        v[9] = NIVEL_PIANO * RUIDO_NIVEL    # [PIANO 3] martelada
+                        if amp == 0.0:                      # voz nova: ataque imediato
+                            amp = NIVEL_PIANO * ATAQUE_INICIAL
+                    w0 = PISO_BRILHO + (1.0 - PISO_BRILHO) * v[7]
+                    v[5] *= self.f_rapido                   # [PIANO 1]
+                    v[6] *= self.f_lento[reg]               # [PIANO 1]
+                    v[7] *= self.f_brilho                   # [PIANO 2]
+                    a1 = PESO_RAPIDO * v[5] + (1.0 - PESO_RAPIDO) * v[6]
+                    w1 = PISO_BRILHO + (1.0 - PISO_BRILHO) * v[7]
+                else:                                       # tecla solta: release
+                    a1 = amp * self.rel_piano[reg]          # [PIANO 1]
+                    w0 = w1 = PISO_BRILHO + (1.0 - PISO_BRILHO) * v[7]
+                    if a1 < 8:
+                        mortos.append(m)
+
+                rica = TABS_RICAS_U[reg]                    # [PIANO 5] tabela por registro
+                passo2 = int(passo * DESAFINA)              # [PIANO 4] 2ª corda
+                h0 = amp * (1.0 - CORDA2)                   # corda 1 (65%)
+                h1 = a1 * (1.0 - CORDA2)
+                g0 = amp * CORDA2                           # corda 2 (35%)
+                g1 = a1 * CORDA2
+                f1 = v[0]
+                f2 = v[8]
+                # [PIANO 2 + 4] 2 cordas, cada uma = tabela rica + tabela escura num só laço
+                par[0] = int(h0 * w0)
+                par[1] = int(h1 * w1)
+                par[2] = int(h0 * (1.0 - w0))
+                par[3] = int(h1 * (1.0 - w1))
+                v[0] = mix_dupla(acc, n, rica, U_ESCURA, f1, passo, par)
+                par[0] = int(g0 * w0)
+                par[1] = int(g1 * w1)
+                par[2] = int(g0 * (1.0 - w0))
+                par[3] = int(g1 * (1.0 - w1))
+                v[8] = mix_dupla(acc, n, rica, U_ESCURA, f2, passo2, par)
+                if v[9] > 8:                                # [PIANO 3] martelada
+                    rf = self.ruido_fator
+                    mix_voz(acc, n, tab_ruido, f1, PASSO_RUIDO,
+                            int(v[9]), int(v[9] * rf))
+                    v[9] *= rf
+                v[1] = a1
+
+            else:
+                if v[2]:
+                    if not v[3]:
+                        v[4] = nivel          # novo ataque
+                    v[4] *= sust
+                    a1 = amp + (v[4] - amp) * atk
+                else:
+                    a1 = amp * rel
+                    if a1 < 8:
+                        mortos.append(m)
+                v[0] = mix_voz(acc, n, tab, v[0], passo, int(amp), int(a1))
+                v[1] = a1
         for m in mortos:
             del vozes[m]
-        finalizar(self.acc, self.out, self.n, ganho_volume * GANHO_SINT)
+        finalizar(acc, self.out, n, ganho_volume * GANHO_SINT)
         return self.out
 
 
-sintese = Sintese(midi)
+# ==========================================================
+# [player]
+# ==========================================================
+# ============================================================
+# player.py - Reprodutor de faixas WAV
+# ============================================================
 
-# ---------------------------------------------------------------------------
-# Player
-# ---------------------------------------------------------------------------
+
 PULO_VEL_MAX_S = 15           # s de áudio por s real, com o joystick no fundo de escala
 PULO_GAP_MAX_MS = 300         # pausa maior que isso = novo gesto
 PULO_PASSO_INICIAL_MS = 50    # intervalo assumido na 1ª chamada de um gesto
 
+
 class Player:
-    def __init__(self, arquivos, callback=saida_audio, repetir=True):
+    def __init__(self, arquivos, callback, repetir=True):
         self.arquivos = arquivos
         self.callback = callback
         self.repetir = repetir
@@ -770,352 +1092,413 @@ class Player:
             self.proximo()
 
 
-# ---------------------------------------------------------------------------
-# Estado do teclado musical
-# ---------------------------------------------------------------------------
-instrumento = "Piano"
-oitava = 4                    # 3..5 (muda com o botão do encoder)
-sel_nota = 0                  # nota selecionada no Afinador (0 = C ... 11 = B)
-PASSO_CENTS = 1               # passo do encoder no Afinador (cents por clique)
-LIM_CENTS = 50                # afinação limitada a +-50 cents (meio semitom)
-acorde_idx = 0                # acorde selecionado/tocando (índice em ACORDES_LISTA)
-acorde_fim = utime.ticks_ms()
-notas_tocando = []            # números MIDI soando agora (para o display)
-
-player = None
-ultima_tecla = None
+# ==========================================================
+# [estado]
+# ==========================================================
+# ============================================================
+# estado.py - Estado global da aplicação e navegação de menus
+# ============================================================
 
 
-def nota_midi(idx):
-    return 12 * (oitava + 1) + idx
+# A lista de acordes depende do módulo midi, então é montada aqui
+MODES[4] = ACORDES_LISTA + ["Teclado"]
 
 
-# ---------------------------------------------------------------------------
-# Navegação da UI
-# ---------------------------------------------------------------------------
-def nav_mode(mov_x, mov_y, clicou):
-    """Navega nas listas com o joystick e executa a seleção com o botão dele."""
-    global mode_ui, mode_sel, instrumento, acorde_idx, acorde_fim
-    itens = MODES[mode_ui]
-    n = len(itens)
+class Estado:
+    def __init__(self):
+        self.mode_ui = 0              # 0 = Menu principal
+        self.mode_sel = 0
+        self.instrumento = "Piano"
+        self.oitava = 4               # 3..5 (muda com o botão do encoder)
+        self.sel_nota = 0             # nota selecionada no Afinador (0 = C ... 11 = B)
+        self.acorde_idx = 0           # acorde selecionado/tocando
+        self.acorde_fim = utime.ticks_ms()
+        self.notas_tocando = []       # números MIDI soando agora (para o display)
+        self.player = None
+        self.ultima_tecla = None
 
-    if mov_y:
-        mode_sel = (mode_sel + mov_y) % n
-    # Na lista de acordes, o eixo X pula de raiz em raiz (4 itens)
-    if mode_ui == 4 and mov_x and mode_sel < n - 1:
-        mode_sel = (mode_sel + 4 * mov_x) % (n - 1)
+    def nota_midi(self, idx):
+        return 12 * (self.oitava + 1) + idx
 
-    if not clicou:
-        return
+    def acorde_ativo(self):
+        return utime.ticks_diff(self.acorde_fim, utime.ticks_ms()) > 0
 
-    escolhido = itens[mode_sel]
+    def nav_mode(self, mov_x, mov_y, clicou):
+        """Navega nas listas com o joystick e executa a seleção com o botão dele."""
+        itens = MODES[self.mode_ui]
+        n = len(itens)
 
-    if mode_ui == 4 and mode_sel < n - 1:      # acorde da lista: toca por 1,5 s
-        acorde_idx = mode_sel
-        acorde_fim = utime.ticks_add(utime.ticks_ms(), DURACAO_ACORDE_MS)
-        return
-    if escolhido == "Piano" or escolhido == "Sintetizador":
-        instrumento = escolhido
-        return
+        if mov_y:
+            self.mode_sel = (self.mode_sel + mov_y) % n
+        # Na lista de acordes, o eixo X pula de raiz em raiz (4 itens)
+        if self.mode_ui == 4 and mov_x and self.mode_sel < n - 1:
+            self.mode_sel = (self.mode_sel + 4 * mov_x) % (n - 1)
 
-    if escolhido == "Menu":
-        mode_ui = 0
-    elif escolhido == "Teclado":
-        mode_ui = 1
-    elif escolhido == "Player":
-        mode_ui = 2
-    elif escolhido == "Instrumento":
-        mode_ui = 3
-    elif escolhido == "Acordes":
-        mode_ui = 4
-    else:  # "Afinador"
-        mode_ui = 5
-    mode_sel = 1 if mode_ui == 3 and instrumento == "Sintetizador" else 0
+        if not clicou:
+            return
 
+        escolhido = itens[self.mode_sel]
 
-def entrar_modo(antigo, novo):
-    """Ações ao trocar de tela."""
-    global player, acorde_fim, ultima_tecla
-    if antigo == 2 and player is not None:
-        player.parar()
-    if novo == 2:
-        abrir_i2s(SAMPLE_RATE, 1, IBUF_PLAYER)
-        player = Player(ARQUIVOS, repetir=REPETIR_LISTA)
-        if ARQUIVOS:
-            player.selecionar(0)
-        ultima_tecla = None
-    else:
-        abrir_i2s(SAMPLE_RATE, 1, IBUF_SINT)
-        if novo == 4:
-            acorde_fim = utime.ticks_ms()
+        if self.mode_ui == 4 and self.mode_sel < n - 1:   # acorde: toca por 1,5 s
+            self.acorde_idx = self.mode_sel
+            self.acorde_fim = utime.ticks_add(utime.ticks_ms(), DURACAO_ACORDE_MS)
+            return
+        if escolhido == "Piano" or escolhido == "Sintetizador":
+            self.instrumento = escolhido
+            return
+
+        if escolhido == "Menu":
+            self.mode_ui = 0
+        elif escolhido == "Teclado":
+            self.mode_ui = 1
+        elif escolhido == "Player":
+            self.mode_ui = 2
+        elif escolhido == "Instrumento":
+            self.mode_ui = 3
+        elif escolhido == "Acordes":
+            self.mode_ui = 4
+        else:  # "Afinador"
+            self.mode_ui = 5
+        self.mode_sel = 1 if self.mode_ui == 3 and self.instrumento == "Sintetizador" else 0
 
 
-# ---------------------------------------------------------------------------
-# Display (128x64 -> 8 linhas de texto de 8 px)
+# ==========================================================
+# [ui]
+# ==========================================================
+# ============================================================
+# ui.py - Interface gráfica no display OLED (128x64)
 #
 # Grade vertical usada em todas as telas:
 #   y =  0        título (linha 0) + linha divisória em y = 9
 #   y = 11 + 9*k  linhas de conteúdo (k = 0, 1, 2, ...)
 #   y = 47        linha de notas tocando      (telas de teclado)
 #   y = 56        última linha (status / botão "voltar")
-# ---------------------------------------------------------------------------
-Y_INI = 11            # primeira linha de conteúdo
-Y_PASSO = 9           # espaçamento entre linhas de conteúdo
-Y_NOTAS = 47          # linha das notas tocando
-Y_RODAPE = 56         # última linha do display (56..63)
+# ============================================================
 
 
-def texto(s, x, y):
-    oled.text(s, x, y, 1)
+class Tela:
+    def __init__(self, oled, estado, midi, audio, arquivos):
+        self.oled = oled
+        self.e = estado
+        self.midi = midi
+        self.audio = audio
+        self.arquivos = arquivos
 
+    # ---------- primitivas ----------
+    def texto(self, s, x, y):
+        self.oled.text(s, x, y, 1)
 
-def centro(s, y):
-    oled.text(s, max(0, (OLED_W - 8 * len(s)) // 2), y, 1)
+    def centro(self, s, y):
+        self.oled.text(s, max(0, (OLED_W - 8 * len(s)) // 2), y, 1)
 
+    def cabecalho(self, titulo):
+        self.centro(titulo, 0)
+        self.oled.hline(0, 9, OLED_W, 1)
 
-def cabecalho(titulo):
-    centro(titulo, 0)
-    oled.hline(0, 9, OLED_W, 1)
+    def item(self, s, y, sel):
+        self.texto(("> " if sel else "  ") + s[:14], 2, y)
 
+    @staticmethod
+    def fmt_tempo(s):
+        s = int(s)
+        return "{:02d}:{:02d}".format(s // 60, s % 60)
 
-def item(s, y, sel):
-    texto(("> " if sel else "  ") + s[:14], 2, y)
+    @staticmethod
+    def janela(txt, t):
+        """Letreiro rolante para nomes com mais de 16 caracteres."""
+        if len(txt) <= 16:
+            return txt
+        extra = len(txt) - 16
+        off = t % (extra + 4)
+        if off > extra:
+            off = extra
+        return txt[off:off + 16]
 
+    def triangulo(self, x, y, h, direita):
+        wd = h // 2
+        meio = h // 2
+        for c in range(wd):
+            metade = meio * (wd - c) // wd
+            xx = x + c if direita else x + wd - 1 - c
+            self.oled.vline(xx, y + meio - metade, 2 * metade + 1, 1)
 
-def fmt_tempo(s):
-    s = int(s)
-    return "{:02d}:{:02d}".format(s // 60, s % 60)
-
-
-def janela(txt, t):
-    """Letreiro rolante para nomes com mais de 16 caracteres."""
-    if len(txt) <= 16:
-        return txt
-    extra = len(txt) - 16
-    off = t % (extra + 4)
-    if off > extra:
-        off = extra
-    return txt[off:off + 16]
-
-
-def triangulo(x, y, h, direita):
-    wd = h // 2
-    meio = h // 2
-    for c in range(wd):
-        metade = meio * (wd - c) // wd
-        xx = x + c if direita else x + wd - 1 - c
-        oled.vline(xx, y + meio - metade, 2 * metade + 1, 1)
-
-
-def desenha_notas(y):
-    """Uma linha com o que está soando: nota + frequência (1 nota) ou a lista de notas (acorde)."""
-    if not notas_tocando:
-        texto("Tocando: -", 2, y)
-    elif len(notas_tocando) == 1:
-        m = notas_tocando[0]
-        texto("{} {:.1f}Hz".format(midi.midi_to_name(m), midi.freq_afinada(m))[:16], 2, y)
-    else:
-        texto(" ".join(midi.midi_to_name(m) for m in notas_tocando)[:16], 2, y)
-
-
-def desenha_status(y):
-    texto("{} O{} V{}".format(instrumento[:5], oitava, volume), 2, y)
-
-
-def desenha_player():
-    cabecalho("Player")
-    p = player
-    if p is None or not ARQUIVOS:
-        centro("Sem arquivos", 24)
-        centro("WAV no SD", 34)
-    else:
-        nome = p.arquivos[p.indice].split("/")[-1]
-        if nome.lower().endswith(".wav"):
-            nome = nome[:-4]
-        pos = p.wav.posicao_s if p.wav else 0
-        dur = p.wav.duracao_s if p.wav else 0
-        centro(janela(nome, int(pos)), 11)
-        centro("{}/{} Vol:{}%".format(p.indice + 1, len(p.arquivos), volume), 20)
-        centro("{} / {}".format(fmt_tempo(pos), fmt_tempo(dur)), 29)
-        # Símbolos multimídia (altura 9 px): prévio | play/pause | próximo
-        ys = 38
-        oled.fill_rect(33, ys, 2, 9, 1)
-        triangulo(36, ys, 8, False)
-        if p.estado == TOCANDO:
-            oled.fill_rect(60, ys, 3, 9, 1)
-            oled.fill_rect(66, ys, 3, 9, 1)
+    # ---------- componentes ----------
+    def desenha_notas(self, y):
+        """Uma linha com o que está soando: nota + frequência (1 nota) ou a lista de notas."""
+        notas = self.e.notas_tocando
+        midi = self.midi
+        if not notas:
+            self.texto("Tocando: -", 2, y)
+        elif len(notas) == 1:
+            m = notas[0]
+            self.texto("{} {:.1f}Hz".format(midi.midi_to_name(m), midi.freq_afinada(m))[:16], 2, y)
         else:
-            triangulo(62, ys, 8, True)
-        triangulo(89, ys, 8, True)
-        oled.fill_rect(93, ys, 2, 9, 1)
-        # Barra de progresso
-        oled.rect(8, 49, 112, 5, 1)
-        if dur > 0:
-            oled.fill_rect(8, 49, int(112 * min(pos / dur, 1.0)), 5, 1)
-    item("Menu", Y_RODAPE, True)
+            self.texto(" ".join(midi.midi_to_name(m) for m in notas)[:16], 2, y)
 
+    def desenha_status(self, y):
+        self.texto("{} O{} V{}".format(self.e.instrumento[:5], self.e.oitava, self.audio.volume), 2, y)
 
-def desenha_afinador():
-    cabecalho("Afinador")
-    ant = NOTAS[(sel_nota - 1) % 12]
-    prox = NOTAS[(sel_nota + 1) % 12]
-    cents = midi.afinacao[sel_nota]
-    m = nota_midi(sel_nota)
-    centro("{} [{}] {}".format(ant, midi.midi_to_name(m), prox), 11)
-    texto("Freq:{:.2f}Hz".format(midi.freq_afinada(m)), 8, 20)
-    texto("Padrao:{:.2f}Hz".format(midi.midi_to_freq(m)), 0, 29)
-    texto("Ajuste:{:+d} cent".format(cents), 0, 38)
-    # Medidor: centro = nota certa (Enc: afina | Joy: troca de nota)
-    oled.rect(14, 47, 101, 8, 1)
-    oled.vline(64, 45, 11, 1)
-    oled.fill_rect(64 + cents * 50 // LIM_CENTS - 1, 49, 3, 4, 1)
-    item("Teclado", Y_RODAPE, True)
-
-
-def desenhar():
-    oled.fill(0)
-    if mode_ui == 0:
-        cabecalho("RaspHarmony")
-        centro("Menu Principal", 13)
-        for i, nome in enumerate(MODES[0]):
-            item(nome, 28 + 12 * i, i == mode_sel)
-
-    elif mode_ui == 1:
-        cabecalho("Teclado")
-        for i, nome in enumerate(MODES[1]):
-            item(nome, Y_INI + Y_PASSO * i, i == mode_sel)
-        desenha_notas(Y_NOTAS)
-        desenha_status(Y_RODAPE)
-
-    elif mode_ui == 2:
-        desenha_player()
-
-    elif mode_ui == 3:
-        cabecalho("Instrumento")
-        for i, nome in enumerate(MODES[3]):
-            marca = " *" if nome == instrumento else ""
-            item(nome + marca, Y_INI + Y_PASSO * i, i == mode_sel)
-        desenha_notas(Y_NOTAS)
-        desenha_status(Y_RODAPE)
-
-    elif mode_ui == 4:
-        cabecalho("Acordes")
-        itens = MODES[4]
-        n = len(itens)
-        ini = max(0, min(mode_sel - 1, n - 4))     # janela rolante de 4 itens
-        for k in range(4):
-            i = ini + k
-            item(itens[i], Y_INI + Y_PASSO * k, i == mode_sel)
-        if mode_sel < n - 1:
-            raiz, tipo = mode_sel // 4, MIDI.CHORD_TYPES[mode_sel % 4]
-            ms = midi.acorde_midis(raiz, tipo)
-            texto(" ".join(midi.midi_to_name(m) for m in ms)[:16], 2, Y_NOTAS + 1)
-            if acorde_ativo():
-                texto("Tocando...", 2, Y_RODAPE)
+    # ---------- telas ----------
+    def desenha_player(self):
+        oled = self.oled
+        p = self.e.player
+        self.cabecalho("Player")
+        if p is None or not self.arquivos:
+            self.centro("Sem arquivos", 24)
+            self.centro("WAV no SD", 34)
+        else:
+            nome = p.arquivos[p.indice].split("/")[-1]
+            if nome.lower().endswith(".wav"):
+                nome = nome[:-4]
+            pos = p.wav.posicao_s if p.wav else 0
+            dur = p.wav.duracao_s if p.wav else 0
+            self.centro(self.janela(nome, int(pos)), 11)
+            if self.audio.mudo: self.centro("{}/{} Vol:MUDO".format(p.indice + 1, len(p.arquivos)), 20)
+            else: self.centro("{}/{} Vol:{}%".format(p.indice + 1, len(p.arquivos), self.audio.volume), 20)
+            self.centro("{} / {}".format(self.fmt_tempo(pos), self.fmt_tempo(dur)), 29)
+            # Símbolos multimídia (altura 9 px): prévio | play/pause | próximo
+            ys = 38
+            oled.fill_rect(33, ys, 2, 9, 1)
+            self.triangulo(36, ys, 8, False)
+            if p.estado == TOCANDO:
+                oled.fill_rect(60, ys, 3, 9, 1)
+                oled.fill_rect(66, ys, 3, 9, 1)
             else:
-                texto("Joy: tocar", 2, Y_RODAPE)
+                self.triangulo(62, ys, 8, True)
+            self.triangulo(89, ys, 8, True)
+            oled.fill_rect(93, ys, 2, 9, 1)
+            # Barra de progresso
+            oled.rect(8, 49, 112, 5, 1)
+            if dur > 0:
+                oled.fill_rect(8, 49, int(112 * min(pos / dur, 1.0)), 5, 1)
+        self.item("Menu", Y_RODAPE, True)
 
-    else:
-        desenha_afinador()
+    def desenha_afinador(self):
+        oled = self.oled
+        midi = self.midi
+        sel = self.e.sel_nota
+        self.cabecalho("Afinador")
+        ant = NOTAS[(sel - 1) % 12]
+        prox = NOTAS[(sel + 1) % 12]
+        cents = midi.afinacao[sel]
+        m = self.e.nota_midi(sel)
+        self.centro("{} [{}] {}".format(ant, midi.midi_to_name(m), prox), 11)
+        self.texto("Freq:{:.2f}Hz".format(midi.freq_afinada(m)), 8, 20)
+        self.texto("Padrao:{:.2f}Hz".format(midi.midi_to_freq(m)), 0, 29)
+        self.texto("Ajuste:{:+d} cent".format(cents), 0, 38)
+        # Medidor: centro = nota certa (Enc: afina | Joy: troca de nota)
+        oled.rect(14, 47, 101, 8, 1)
+        oled.vline(64, 45, 11, 1)
+        oled.fill_rect(64 + cents * 50 // LIM_CENTS - 1, 49, 3, 4, 1)
+        self.item("Teclado", Y_RODAPE, True)
 
-    oled.show()
+    def desenhar(self):
+        e = self.e
+        midi = self.midi
+        self.oled.fill(0)
+        if e.mode_ui == 0:
+            self.cabecalho("RaspHarmony")
+            self.centro("Menu Principal", 13)
+            for i, nome in enumerate(MODES[0]):
+                self.item(nome, 28 + 12 * i, i == e.mode_sel)
+
+        elif e.mode_ui == 1:
+            self.cabecalho("Teclado")
+            for i, nome in enumerate(MODES[1]):
+                self.item(nome, Y_INI + Y_PASSO * i, i == e.mode_sel)
+            self.desenha_notas(Y_NOTAS)
+            self.desenha_status(Y_RODAPE)
+
+        elif e.mode_ui == 2:
+            self.desenha_player()
+
+        elif e.mode_ui == 3:
+            self.cabecalho("Instrumento")
+            for i, nome in enumerate(MODES[3]):
+                marca = " *" if nome == e.instrumento else ""
+                self.item(nome + marca, Y_INI + Y_PASSO * i, i == e.mode_sel)
+            self.desenha_notas(Y_NOTAS)
+            self.desenha_status(Y_RODAPE)
+
+        elif e.mode_ui == 4:
+            self.cabecalho("Acordes")
+            itens = MODES[4]
+            n = len(itens)
+            ini = max(0, min(e.mode_sel - 1, n - 4))     # janela rolante de 4 itens
+            for k in range(4):
+                i = ini + k
+                self.item(itens[i], Y_INI + Y_PASSO * k, i == e.mode_sel)
+            if e.mode_sel < n - 1:
+                raiz, tipo = e.mode_sel // 4, MIDI.CHORD_TYPES[e.mode_sel % 4]
+                ms = midi.acorde_midis(raiz, tipo)
+                self.texto(" ".join(midi.midi_to_name(m) for m in ms)[:16], 2, Y_NOTAS + 1)
+                if e.acorde_ativo():
+                    self.texto("Tocando...", 2, Y_RODAPE)
+                else:
+                    self.texto("Joy: tocar", 2, Y_RODAPE)
+
+        else:
+            self.desenha_afinador()
+
+        self.oled.show_parcial(1)
+
+    def chave_visual(self):
+        """Resumo do que está na tela; só redesenha quando isso muda."""
+        e = self.e
+        if e.mode_ui == 2 and e.player is not None:
+            pos = int(e.player.wav.posicao_s) if e.player.wav else 0
+            return (2, e.player.indice, e.player.estado, pos, self.audio.volume, self.audio.mudo)
+        return (e.mode_ui, e.mode_sel, tuple(e.notas_tocando), self.audio.volume,
+                e.instrumento, e.oitava, e.sel_nota, self.midi.afinacao[e.sel_nota],
+                e.acorde_ativo())
 
 
-def acorde_ativo():
-    return utime.ticks_diff(acorde_fim, utime.ticks_ms()) > 0
+# ==========================================================
+# [app]
+# ==========================================================
+# ============================================================
+# app.py - Aplicação: monta o hardware e executa o laço principal
+# ============================================================
 
 
-def chave_visual():
-    """Resumo do que está na tela; só redesenha quando isso muda."""
-    if mode_ui == 2 and player is not None:
-        pos = int(player.wav.posicao_s) if player.wav else 0
-        return (2, player.indice, player.estado, pos, volume)
-    return (mode_ui, mode_sel, tuple(notas_tocando), volume, instrumento, oitava,
-            sel_nota, midi.afinacao[sel_nota], acorde_ativo())
+
+class Aplicacao:
+    def __init__(self):
+        # Entradas
+        self.joy = Joystick(pin_JOY_X, pin_JOY_Y, pin_JOY_SW,
+                            LIMIAR, INVERTE_X, INVERTE_Y)
+        enc_a = Pin(pin_ENC_A, Pin.IN, Pin.PULL_UP)
+        enc_b = Pin(pin_ENC_B, Pin.IN, Pin.PULL_UP)
+        enc_sw = Pin(pin_ENC_SW, Pin.IN, Pin.PULL_UP)
+        self.enc = Encoder(enc_a, enc_b)
+        self.btn_enc = Botao(enc_sw)
+        self.teclado = Teclado(row_pins, col_pins, key_notes)
+
+        # Display OLED
+        i2c_oled = I2C(0, scl=Pin(OLED_SCL), sda=Pin(OLED_SDA), freq=400000)
+        oled = SH1106_I2C(OLED_W, OLED_H, i2c_oled, addr=OLED_ADDR, rotate=180)
+
+        # Armazenamento
+        self.arquivos = montar_sd(SD_SCK, SD_MOSI, SD_MISO, SD_CS, SD_MOUNT)
+
+        # Áudio e síntese
+        self.audio = SaidaAudio()
+        self.audio.abrir(SAMPLE_RATE, 1, IBUF_SINT)
+        self.sintese = Sintese(midi)
+
+        # Estado e interface
+        self.e = Estado()
+        self.tela = Tela(oled, self.e, midi, self.audio, self.arquivos)
+
+    # ---------- troca de tela ----------
+    def entrar_modo(self, antigo, novo):
+        e = self.e
+        if antigo == 2 and e.player is not None:
+            self.audio.desmutar()
+            e.player.parar()
+        if novo == 2:
+            self.audio.abrir(SAMPLE_RATE, 1, IBUF_PLAYER)
+            e.player = Player(self.arquivos, self.audio.saida_wav, repetir=REPETIR_LISTA)
+            if self.arquivos:
+                e.player.selecionar(0)
+            e.ultima_tecla = None
+        else:
+            self.audio.abrir(SAMPLE_RATE, 1, IBUF_SINT)
+            if novo == 4:
+                e.acorde_fim = utime.ticks_ms()
+
+    # ---------- laços de cada família de modos ----------
+    def loop_player(self, x, delta_enc, clique_enc):
+        e = self.e
+        player = e.player
+        self.audio.ajustar_volume(delta_enc)
+        if clique_enc:
+            self.audio.alternar_mudo()
+        tecla = self.teclado.scan(False)      # botões multimídia (linha 4)
+        if tecla != e.ultima_tecla:           # só age na borda (um aperto = uma ação)
+            e.ultima_tecla = tecla
+            if tecla and self.arquivos:
+                if tecla == "Play/Stop":
+                    player.pausar_retomar()
+                elif tecla == "Next":
+                    player.proximo()
+                elif tecla == "Prev":
+                    player.anterior()
+                elif tecla == "Reinicia":
+                    player.reiniciar()
+
+        if self.arquivos and abs(x) > self.joy.limiar:   # joystick em X: avança/retrocede
+            player.pular(x)
+
+        if player.estado == TOCANDO:
+            player.atualizar()                # lê e envia o próximo bloco
+        else:
+            self.audio.escrever(SILENCIO)     # pausado: mantém o I2S alimentado
+
+    def loop_sintetizador(self, mov_x, delta_enc, clique_enc):
+        """Teclado / Instrumento / Acordes / Afinador (e Menu, em silêncio)."""
+        e = self.e
+        alvo = []
+        instr = e.instrumento
+
+        if e.mode_ui == 5:                                # ---- Afinador
+            instr = "Afinador"
+            nomes = self.teclado.scan(True)
+            if nomes:                                     # tecla seleciona a nota
+                e.sel_nota = NOTAS.index(nomes[0])
+            elif mov_x:                                   # joystick navega entre as notas
+                e.sel_nota = (e.sel_nota + mov_x) % 12
+            if delta_enc:
+                c = midi.afinacao[e.sel_nota] + delta_enc * PASSO_CENTS
+                midi.afinacao[e.sel_nota] = max(-LIM_CENTS, min(LIM_CENTS, c))
+            if clique_enc:                                # botão do encoder zera a afinação
+                midi.afinacao[e.sel_nota] = 0
+            alvo = [e.nota_midi(e.sel_nota)]
+
+        else:
+            self.audio.ajustar_volume(delta_enc)
+            if e.mode_ui == 1 or e.mode_ui == 3:          # ---- Teclado / Instrumento
+                if clique_enc:
+                    e.oitava = e.oitava + 1 if e.oitava < 5 else 3
+                alvo = [e.nota_midi(NOTAS.index(nm)) for nm in self.teclado.scan(True)]
+            elif e.mode_ui == 4 and e.acorde_ativo():     # ---- Acordes
+                alvo = midi.acorde_midis(e.acorde_idx // 4,
+                                         MIDI.CHORD_TYPES[e.acorde_idx % 4])
+
+        e.notas_tocando = alvo
+        # sempre escreve (silêncio se vazio)
+        self.audio.escrever(self.sintese.gerar(alvo, instr, self.audio.ganho))
+
+    # ---------- laço principal ----------
+    def executar(self):
+        e = self.e
+        chave_ant = None
+        t_desenho = utime.ticks_ms()
+        while True:
+            x, mov_x, mov_y = self.joy.ler()
+            modo_ant = e.mode_ui
+            e.nav_mode(mov_x, mov_y, self.joy.clicou())
+            if e.mode_ui != modo_ant:
+                self.entrar_modo(modo_ant, e.mode_ui)
+
+            delta_enc = self.enc.cliques()
+            clique_enc = self.btn_enc.pressionado()
+
+            if e.mode_ui == 2:
+                self.loop_player(x, delta_enc, clique_enc)
+            else:
+                self.loop_sintetizador(mov_x, delta_enc, clique_enc)
+
+            chave = self.tela.chave_visual()
+            agora = utime.ticks_ms()
+            if chave != chave_ant and utime.ticks_diff(agora, t_desenho) >= 250:
+                chave_ant = chave
+                t_desenho = agora
+                self.tela.desenhar()
+            self.tela.oled.show_parcial(1)
 
 
-# ---------------------------------------------------------------------------
-# Laços de cada família de modos
-# ---------------------------------------------------------------------------
-def loop_player(x, delta_enc):
-    global ultima_tecla
-    ajustar_volume(delta_enc)
-
-    tecla = key_notes_scan(0)             # botões multimídia (linha 4)
-    if tecla != ultima_tecla:             # só age na borda (um aperto = uma ação)
-        ultima_tecla = tecla
-        if tecla and ARQUIVOS:
-            if tecla == "Play/Stop":
-                player.pausar_retomar()
-            elif tecla == "Next":
-                player.proximo()
-            elif tecla == "Prev":
-                player.anterior()
-            elif tecla == "Reinicia":
-                player.reiniciar()
-
-    if ARQUIVOS and abs(x) > LIMIAR:      # joystick em X: avança/retrocede
-        player.pular(x)
-
-    if player.estado == TOCANDO:
-        player.atualizar()                # lê e envia o próximo bloco
-    else:
-        i2s_max.write(SILENCIO)           # pausado: mantém o I2S alimentado
-
-
-def loop_sintetizador(mov_x, delta_enc, clique_enc):
-    """Teclado / Instrumento / Acordes / Afinador (e Menu, em silêncio)."""
-    global oitava, sel_nota, notas_tocando
-    alvo = []
-    instr = instrumento
-
-    if mode_ui == 5:                                  # ---- Afinador
-        instr = "Afinador"
-        nomes = key_notes_scan(1)
-        if nomes:                                     # tecla seleciona a nota
-            sel_nota = NOTAS.index(nomes[0])
-        elif mov_x:                                   # joystick navega entre as notas
-            sel_nota = (sel_nota + mov_x) % 12
-        if delta_enc:
-            c = midi.afinacao[sel_nota] + delta_enc * PASSO_CENTS
-            midi.afinacao[sel_nota] = max(-LIM_CENTS, min(LIM_CENTS, c))
-        if clique_enc:                                # botão do encoder zera a afinação
-            midi.afinacao[sel_nota] = 0
-        alvo = [nota_midi(sel_nota)]
-
-    else:
-        ajustar_volume(delta_enc)
-        if mode_ui == 1 or mode_ui == 3:              # ---- Teclado / Instrumento
-            if clique_enc:
-                oitava = oitava + 1 if oitava < 5 else 3
-            alvo = [nota_midi(NOTAS.index(nm)) for nm in key_notes_scan(1)]
-        elif mode_ui == 4 and acorde_ativo():         # ---- Acordes
-            alvo = midi.acorde_midis(acorde_idx // 4, MIDI.CHORD_TYPES[acorde_idx % 4])
-
-    notas_tocando = alvo
-    i2s_max.write(sintese.gerar(alvo, instr))         # sempre escreve (silêncio se vazio)
-
-
-# ------------------------------------------------------------
-# Loop principal
-# ------------------------------------------------------------
-chave_ant = None
-while True:
-    x, mov_x, mov_y = joystick_sense()
-    modo_ant = mode_ui
-    nav_mode(mov_x, mov_y, btn_joy.pressionado())
-    if mode_ui != modo_ant:
-        entrar_modo(modo_ant, mode_ui)
-
-    delta_enc = enc.cliques()
-    clique_enc = btn_enc.pressionado()
-
-    if mode_ui == 2:
-        loop_player(x, delta_enc)
-    else:
-        loop_sintetizador(mov_x, delta_enc, clique_enc)
-
-    chave = chave_visual()
-    if chave != chave_ant:
-        chave_ant = chave
-        desenhar()
+# ============================================================
+# Ponto de entrada
+# ============================================================
+Aplicacao().executar()
