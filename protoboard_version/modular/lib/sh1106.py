@@ -182,6 +182,27 @@ class SH1106(framebuf.FrameBuffer):
                 self.write_data(db[(w*page):(w*page+w)])
         self.pages_to_update = 0
 
+    def show_parcial(self, max_paginas=1):
+        """Envia até max_paginas páginas sujas e deixa o resto para a próxima chamada.
+        Retorna True se ainda restam páginas para enviar."""
+        pend = self.pages_to_update
+        if not pend:
+            return False
+        db, w = self.displaybuf, self.width
+        enviadas = 0
+        for page in range(self.pages):
+            if pend & (1 << page):
+                self.write_cmd(_SET_PAGE_ADDRESS | page)
+                self.write_cmd(_LOW_COLUMN_ADDRESS | 2)
+                self.write_cmd(_HIGH_COLUMN_ADDRESS | 0)
+                self.write_data(db[w * page:w * page + w])
+                pend &= ~(1 << page)
+                enviadas += 1
+                if enviadas >= max_paginas:
+                    break
+        self.pages_to_update = pend
+        return pend != 0
+
     def pixel(self, x, y, color=None):
         if color is None:
             return super().pixel(x, y)
@@ -316,3 +337,4 @@ class SH1106_SPI(SH1106):
 
     def reset(self, res=None):
         super().reset(self.res)
+
