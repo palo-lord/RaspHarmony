@@ -152,4 +152,5 @@ class Aplicacao:
                 chave_ant = chave
                 t_desenho = agora
                 self.tela.desenhar()
+            self.tela.oled.show_parcial(1)
 
