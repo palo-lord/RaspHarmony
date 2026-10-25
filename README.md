@@ -9,9 +9,7 @@ Na versão protoboard utilizamos a placa Raspberry Pi Pico 2, já na versão PCB
 # Especificações 
 Todas as músicas estão no formato WAV com 16 bits e taxa de amostragem (Sample Rate) padrão do sistema de 44.1kHz, considerando que o ser humano escuta até 20kHz. 
 # Lista de BUGS e Pendencias:
-•Retroceder no Player não funciona\
 •Alterar volume causa picote\
 •5% volume mata o sinal\
 •Revisar Teclado, distorções nas notas\
-•Ajustar parametros player\
-•Conseguir cabo usb A-C
+•Ajustar parametros player
