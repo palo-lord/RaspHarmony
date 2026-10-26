@@ -441,6 +441,7 @@ O buffer maior do Player dá folga para o SD e para o display sem "falhas" no á
 | Buffer de leitura do SD | 8 KB |
 | Buffer do display (128×64 monocromático) | 1 KB |
 | Acumulador e saída da síntese | 1,5 KB |
+| Total | 64,5 KB = 12% do Pico 2 |
 
 São **estimativas**; para medir na sua placa:
 
