@@ -4,7 +4,9 @@
 Projeto da disciplina **EA801 — FEEC / Unicamp**.
 
 <!-- IMAGEM DE CAPA: já existe uma no README atual. Troque por uma foto do projeto montado, se preferir. -->
-<img width="842" height="595" alt="RaspHarmony - visão geral" src="https://github.com/user-attachments/assets/431e1df0-1cf8-458e-8157-acd2e98080bd" />
+<img width="1294" height="870" alt="image" src="https://github.com/user-attachments/assets/a9d77c38-3739-42be-8d0f-9468db03e0cd" />
+
+" />
 
 <!-- 🎥 VÍDEO/GIF DE DEMONSTRAÇÃO: grave o projeto tocando (teclado + player) e coloque aqui.
      Dica: arraste o .mp4 para o editor do GitHub e ele gera o link, ou use um GIF em docs/img/demo.gif -->
