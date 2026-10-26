@@ -100,7 +100,7 @@ O projeto foi feito em duas etapas, ambas em **MicroPython**:
 | | **Protoboard** | **PCB** |
 |---|---|---|
 | Placa | Raspberry Pi **Pico 2** (RP2350) | Raspberry Pi **Pico** (RP2040) |
-| Estado | Concluída | <!-- TODO --> `a preencher` |
+| Estado | Concluída | Desenvolvimento |
 | Pasta | `protoboard_version/` | <!-- TODO --> `pcb_version/` |
 | Ligações | Esquema do [Wokwi](https://wokwi.com/projects/475915740521352193) | <!-- TODO: esquemático/Gerber --> |
 
@@ -125,7 +125,7 @@ Ambas têm o mesmo comportamento: a monolítica é gerada a partir da modular, a
 | Microcontrolador | Raspberry Pi Pico 2 (protoboard) / Pico (PCB) | 1 |
 | Display | OLED 128×64 I2C com controlador **SH1106** (endereço `0x3C`) | 1 |
 | Amplificador de áudio | Módulo I2S **MAX98357A** | 1 |
-| Alto-falante | <!-- TODO: impedância e potência (ex.: 4 Ω / 3 W) --> `a preencher` | 1 |
+| Alto-falante | 4 Ω / 3 W | 1 |
 | Armazenamento | Módulo leitor microSD (SPI) + cartão microSD | 1 |
 | Teclado | Matriz 4×4 de 16 teclas | 1 |
 | Joystick | Módulo analógico de 2 eixos com botão | 1 |
