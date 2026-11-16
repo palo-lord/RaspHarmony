@@ -1,4 +1,4 @@
-<img width="1304" height="676" alt="image" src="https://github.com/user-attachments/assets/a9d7f787-7e5a-4c78-ac4f-5be9665bdc70" /># 🎹 RaspHarmony
+# 🎹 RaspHarmony
 
 **Sistema embarcado sintetizador musical polifônico e reprodutor de arquivos WAV**, em MicroPython, para Raspberry Pi Pico.
 Projeto da disciplina **EA801 — FEEC / Unicamp**.
@@ -95,6 +95,7 @@ RaspHarmony/
 │       └── RaspHarmony_All.py     ← todos os módulos em um único arquivo
 ├── pcb_version/
 │   ├── hardware/
+|   |   ├── Design.epro2
 │   │   ├── main_pcb/            ← ponto de entrada
 │   │   └── keytouch_pcb/  
 │   ├── software/
