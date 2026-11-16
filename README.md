@@ -141,14 +141,19 @@ Ambas têm o mesmo comportamento: a monolítica é gerada a partir da modular, a
 | Ambas | Amplificador de áudio | Módulo I2S **MAX98357A** | 1 |
 | Ambas | Alto-falante | 4 Ω / 3 W | 1 |
 | Ambas | Armazenamento | Módulo leitor microSD (SPI) + cartão microSD | 1 |
+|---|---|---|---|
 | Protoboard | Display | OLED 128×64 I2C com controlador **SH1106** (endereço `0x3C`) | 1 |
 | Protoboard | Teclado | Matriz 4×4 de 16 teclas | 1 |
 | Protoboard | Joystick | Módulo analógico de 2 eixos com botão | 1 |
 | Protoboard | Protoboard | Placa de Prototipagem | 1 |
-| Protoboard | Jumpers | Cabos de conexão jumper | 15 |
-|---| Botões de Navegação | Botões Direcionais | 5 |
-
-|---| Outros | Protoboard, jumpers, cabo USB | — |
+| Protoboard | Jumpers | Cabos de conexão jumper | 30|
+|---|---|---|---|
+| PCB | Display | OLED 128×64 SPI 2.42" com controlador **SH1106** | 1 |
+| PCB | Botões de Direcionais | Botões de Navegação 12mm x 12mm | 5 |
+| PCB | Expansor 16 GPIO I2C | CI MCP23017 | 1 |
+| PCB | Conector 6 vias | Kzinho Macho 6  vias 90 graus | 2 |
+| PCB | Fonte de Alimentação | Fonte 5V 2A conector P4 | 1 |
+| PCB | Conector Alimentação | Jack DC P4 Femea p/ PCB | 1 |
 
 <!-- 📷 IMAGEM: foto de todos os componentes lado a lado, identificados. Arquivo sugerido: docs/img/componentes.jpg -->
 ![Componentes utilizados](docs/img/componentes.jpg)
