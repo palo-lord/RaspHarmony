@@ -93,7 +93,14 @@ RaspHarmony/
 │   │   └── lib/                   ← módulos (copiar para /lib no Pico)
 │   └── monolitico/
 │       └── RaspHarmony_All.py     ← todos os módulos em um único arquivo
-└── pcb_version/                   ← (a adicionar) versão em PCB
+├── pcb_version/
+│   ├── hardware/
+│   │   ├── main_pcb/            ← ponto de entrada
+│   │   └── keytouch_pcb/  
+│   ├── software/
+|   |   ├── main/main.py           ← ponto de entrada
+|   |   └── lib/                   ← módulos (copiar para /lib no Pico)
+
 ```
 
 > Convenção sugerida para as imagens desta documentação: `docs/img/`.
