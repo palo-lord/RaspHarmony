@@ -176,6 +176,7 @@ PCB teclado:
 
 ### 5.3 Pinagem (versão protoboard)
 
+Versão Protoboard
 Fonte: `modular/lib/config.py`.
 
 | Função | Sinal | GPIO | Periférico | Observação |
@@ -198,7 +199,11 @@ Fonte: `modular/lib/config.py`.
 | **Teclado 4×4** | Linhas R1–R4 | GP12, GP11, GP10, GP9 | Digital | Saída só durante a varredura |
 | | Colunas C1–C4 | GP8, GP7, GP6, GP5 | Digital | Pull-up interno |
 
-> ⚠️ **Atenção:** todos os GPIOs do Pico trabalham em **3,3 V** e **não toleram 5 V**. Alimente os módulos de forma que nenhuma saída de 5 V chegue a um GPIO.
+Versão PCB
+| Função | Sinal | GPIO | Periférico | Observação |
+|---|---|---|---|---|
+
+
 
 ### 5.4 Mapa do teclado matricial
 
