@@ -3,14 +3,21 @@
 **Sistema embarcado sintetizador musical polifônico e reprodutor de arquivos WAV**, em MicroPython, para Raspberry Pi Pico.
 Projeto da disciplina **EA801 — FEEC / Unicamp**.
 
-<!-- IMAGEM DE CAPA: já existe uma no README atual. Troque por uma foto do projeto montado, se preferir. -->
+
+Imagem Versão Protoboard
+
 <img width="1294" height="870" alt="image" src="https://github.com/user-attachments/assets/a9d77c38-3739-42be-8d0f-9468db03e0cd" />
 
-" />
+Vídeo Demonstração Versão Protoboard
+https://github.com/user-attachments/assets/c24f54d9-4863-42ec-8569-7e141fed8b62
 
-<!-- 🎥 VÍDEO/GIF DE DEMONSTRAÇÃO: grave o projeto tocando (teclado + player) e coloque aqui.
-     Dica: arraste o .mp4 para o editor do GitHub e ele gera o link, ou use um GIF em docs/img/demo.gif -->
-![Demonstração do RaspHarmony](docs/img/demo.gif)
+
+Imagens Versão PCB (Design placa principal e keyboard touch)
+<img width="1283" height="844" alt="image" src="https://github.com/user-attachments/assets/d28e8e70-d743-48aa-9900-9cae671ed8b2" />
+<img width="1215" height="858" alt="image" src="https://github.com/user-attachments/assets/6d02408f-640b-4035-a4c5-b5d655ce7334" />
+
+
+
 
 ---
 
