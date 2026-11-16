@@ -1,4 +1,4 @@
-# 🎹 RaspHarmony
+<img width="1304" height="676" alt="image" src="https://github.com/user-attachments/assets/a9d7f787-7e5a-4c78-ac4f-5be9665bdc70" /># 🎹 RaspHarmony
 
 **Sistema embarcado sintetizador musical polifônico e reprodutor de arquivos WAV**, em MicroPython, para Raspberry Pi Pico.
 Projeto da disciplina **EA801 — FEEC / Unicamp**.
@@ -160,13 +160,18 @@ Ambas têm o mesmo comportamento: a monolítica é gerada a partir da modular, a
 
 ### 5.2 Diagrama de ligações
 
+**Esquema Versão Protoboard**
 O esquema completo está no Wokwi: **<https://wokwi.com/projects/475915740521352193>**
 
 <!-- Esta imagem já existe no protoboard.md; mantida aqui. -->
 <img width="748" height="477" alt="Esquema de ligações no Wokwi" src="https://github.com/user-attachments/assets/e8f4e008-c7f6-4c20-a2c0-9a6521cde047" />
 
-<!-- 📷 IMAGEM: foto da montagem real na protoboard. Arquivo sugerido: docs/img/protoboard.jpg -->
-![Montagem real na protoboard](docs/img/protoboard.jpg)
+**Esquema Versão PCB**
+PCB principal:
+<img width="1304" height="676" alt="image" src="https://github.com/user-attachments/assets/43e5bcad-b0f5-4a02-9e30-66f4b40a4603" />
+
+PCB teclado:
+<img width="1312" height="567" alt="image" src="https://github.com/user-attachments/assets/09d4ece8-65c5-41c8-89b3-4015dd0e2ddf" />
 
 ### 5.3 Pinagem (versão protoboard)
 
