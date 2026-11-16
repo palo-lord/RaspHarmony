@@ -73,7 +73,7 @@ O RaspHarmony tem dois modos de operação, escolhidos num menu no display OLED:
 | Vinicius Pedrillo de Souza | 258667 |
 
 Disciplina **EA801** — Faculdade de Engenharia Elétrica e de Computação (FEEC), Unicamp.
-Docente responsável: <!-- TODO: nome do professor(a) --> `a preencher`
+Docente responsável: Fabiano Fruett
 
 ---
 
@@ -114,9 +114,9 @@ O projeto foi feito em duas etapas, ambas em **MicroPython**:
 | | **Protoboard** | **PCB** |
 |---|---|---|
 | Placa | Raspberry Pi **Pico 2** (RP2350) | Raspberry Pi **Pico** (RP2040) |
-| Estado | Concluída | Desenvolvimento |
-| Pasta | `protoboard_version/` | <!-- TODO --> `pcb_version/` |
-| Ligações | Esquema do [Wokwi](https://wokwi.com/projects/475915740521352193) | <!-- TODO: esquemático/Gerber --> |
+| Estado | Concluída | Concluída |
+| Pasta | `protoboard_version/` | `pcb_version/` |
+| Ligações | Esquema do [Wokwi](https://wokwi.com/projects/475915740521352193) | `pcb_version/hardware` |
 
 ### Sub-versões do software (protoboard)
 
@@ -134,17 +134,21 @@ Ambas têm o mesmo comportamento: a monolítica é gerada a partir da modular, a
 
 ### 5.1 Lista de materiais
 
-| Item | Descrição | Qtd. |
-|---|---|---|
-| Microcontrolador | Raspberry Pi Pico 2 (protoboard) / Pico (PCB) | 1 |
-| Display | OLED 128×64 I2C com controlador **SH1106** (endereço `0x3C`) | 1 |
-| Amplificador de áudio | Módulo I2S **MAX98357A** | 1 |
-| Alto-falante | 4 Ω / 3 W | 1 |
-| Armazenamento | Módulo leitor microSD (SPI) + cartão microSD | 1 |
-| Teclado | Matriz 4×4 de 16 teclas | 1 |
-| Joystick | Módulo analógico de 2 eixos com botão | 1 |
-| Encoder | Encoder rotativo com botão (tipo KY-040) | 1 |
-| Outros | Protoboard, jumpers, cabo USB | — |
+| Versão | Item | Descrição | Qtd. |
+|---|---|---|---|
+| Ambas | Microcontrolador | Raspberry Pi Pico 2 (protoboard) / Pico (PCB) | 1 |
+| Ambas | Encoder | Encoder rotativo com botão (tipo KY-040) | 1 |
+| Ambas | Amplificador de áudio | Módulo I2S **MAX98357A** | 1 |
+| Ambas | Alto-falante | 4 Ω / 3 W | 1 |
+| Ambas | Armazenamento | Módulo leitor microSD (SPI) + cartão microSD | 1 |
+| Protoboard | Display | OLED 128×64 I2C com controlador **SH1106** (endereço `0x3C`) | 1 |
+| Protoboard | Teclado | Matriz 4×4 de 16 teclas | 1 |
+| Protoboard | Joystick | Módulo analógico de 2 eixos com botão | 1 |
+| Protoboard | Protoboard | Placa de Prototipagem | 1 |
+| Protoboard | Jumpers | Cabos de conexão jumper | 15 |
+|---| Botões de Navegação | Botões Direcionais | 5 |
+
+|---| Outros | Protoboard, jumpers, cabo USB | — |
 
 <!-- 📷 IMAGEM: foto de todos os componentes lado a lado, identificados. Arquivo sugerido: docs/img/componentes.jpg -->
 ![Componentes utilizados](docs/img/componentes.jpg)
