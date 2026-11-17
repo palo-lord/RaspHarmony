@@ -14,8 +14,10 @@ https://github.com/user-attachments/assets/c24f54d9-4863-42ec-8569-7e141fed8b62
 
 Imagens Versão PCB (Design placa principal e keyboard touch)
 <img width="1283" height="844" alt="image" src="https://github.com/user-attachments/assets/d28e8e70-d743-48aa-9900-9cae671ed8b2" />
-<img width="1215" height="858" alt="image" src="https://github.com/user-attachments/assets/6d02408f-640b-4035-a4c5-b5d655ce7334" />
+180mm x 112mm
 
+<img width="1215" height="858" alt="image" src="https://github.com/user-attachments/assets/6d02408f-640b-4035-a4c5-b5d655ce7334" />
+195mm x 142mm
 
 
 
