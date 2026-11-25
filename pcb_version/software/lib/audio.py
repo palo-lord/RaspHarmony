@@ -3,6 +3,7 @@
 # ============================================================
 from machine import Pin, I2S
 import micropython
+import gc
 
 from config import SCK_PIN, WS_PIN, SD_PIN, IBUF_PLAYER, VOL_PASSO, VOLUME_INICIAL
 
@@ -49,21 +50,36 @@ class SaidaAudio:
         self._atualiza_ganho()
 
     def abrir(self, taxa, canais, ibuf):
-        """(Re)cria o I2S só se a configuração mudou."""
+        """(Re)cria o I2S só se a configuração mudou.
+        O buffer do I2S precisa de um bloco CONTÍGUO de RAM; por isso o I2S antigo é
+        liberado e o heap é compactado (gc) antes de alocar o novo. Se ainda assim
+        faltar memória, tenta com buffers menores em vez de derrubar o programa."""
         cfg = (taxa, canais, ibuf)
         if cfg == self._cfg:
             return
         if self.i2s is not None:
             self.i2s.deinit()
-        self.i2s = I2S(0,
-            sck=Pin(SCK_PIN),
-            ws=Pin(WS_PIN),
-            sd=Pin(SD_PIN),
-            mode=I2S.TX,
-            rate=taxa,
-            bits=16,
-            format=I2S.STEREO if canais == 2 else I2S.MONO,
-            ibuf=ibuf)
+            self.i2s = None
+        self._cfg = None
+        gc.collect()
+        tam = ibuf
+        while True:
+            try:
+                self.i2s = I2S(0,
+                    sck=Pin(SCK_PIN),
+                    ws=Pin(WS_PIN),
+                    sd=Pin(SD_PIN),
+                    mode=I2S.TX,
+                    rate=taxa,
+                    bits=16,
+                    format=I2S.STEREO if canais == 2 else I2S.MONO,
+                    ibuf=tam)
+                break
+            except MemoryError:
+                gc.collect()
+                tam //= 2
+                if tam < 4096:
+                    raise
         self._cfg = cfg
 
     def ajustar_volume(self, delta):
@@ -84,4 +100,5 @@ class SaidaAudio:
         if self.ganho != GANHO_UNIT:
             aplicar_volume(dados, n, self.ganho)
         self.i2s.write(dados)
+
 
