@@ -3,6 +3,7 @@
 # ============================================================
 from machine import Pin, I2C
 import utime
+import gc
 
 import config as C
 from encoder import Encoder
@@ -72,7 +73,10 @@ class Aplicacao:
             self.audio.desmutar()
             e.player.parar()
         e.teclas_mask = 0
+        if antigo == M_PLAYER:
+            e.player = None                # libera o buffer de 8 KB do Player
         if novo == M_PLAYER:
+            gc.collect()
             self.audio.abrir(C.SAMPLE_RATE, 1, C.IBUF_PLAYER)
             e.player = Player(self.arquivos, self.audio.saida_wav, repetir=C.REPETIR_LISTA)
             if self.arquivos:
@@ -191,3 +195,4 @@ class Aplicacao:
                 t_desenho = agora
                 self.tela.desenhar()
             self.tela.oled.show_parcial(1)
+
