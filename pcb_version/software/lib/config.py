@@ -67,7 +67,7 @@ PARADO, TOCANDO, PAUSADO = 0, 1, 2
 # Áudio / I2S
 SAMPLE_RATE = 44100
 IBUF_SINT = 4096     # ~46.5 ms de latência no teclado
-IBUF_PLAYER = 32768   # ~372 ms de folga (mono); custa 16 KB a mais de RAM
+IBUF_PLAYER = 16384   # ~186 ms de folga (mono). 32768 falha com MemoryError (heap fragmentado)
 
 # Volume
 VOL_PASSO = 2        # % por clique do encoder
@@ -100,3 +100,4 @@ UI_MIN_MS = 150          # intervalo mínimo entre redesenhos da tela
 # Afinador
 PASSO_CENTS = 1      # cents por clique do encoder
 LIM_CENTS = 50       # afinação limitada a +-50 cents
+
