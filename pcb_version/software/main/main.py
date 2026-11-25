@@ -26,5 +26,6 @@ import micropython
 micropython.alloc_emergency_exception_buf(100)  # permite ver erros dentro de IRQ
 
 from app import Aplicacao
-
+   
 Aplicacao().executar()
+
