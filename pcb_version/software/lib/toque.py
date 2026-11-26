@@ -100,8 +100,17 @@ class TecladoToque:
         self.rapido = 0      # pads que já estão em 0 na 1ª leitura (sem resolução)
         self.saturado = 0    # pads livres que passam do fim da janela
 
-        # Configuração explícita: sem inversão, sem interrupção e SEM pull-up
-        # (um pull-up ligado impediria a descarga pelo resistor de 1 MΩ).
+        self.erros = 0       # quantas vezes o I2C falhou e foi recuperado
+
+        self._config_regs()
+        self._definir_janela(C.TOQUE_ATRASO0_US, C.TOQUE_PASSOS)
+        self.calibrar()
+
+    # ---------- configuração e recuperação do I2C ----------
+    def _config_regs(self):
+        """Configuração explícita: sem inversão, sem interrupção e SEM pull-up
+        (um pull-up ligado impediria a descarga pelo resistor de 1 MΩ).
+        Também é chamada depois de um reset do MCP23017."""
         w = self.i2c.writeto_mem
         a = self.addr
         w(a, _IPOL, b'\x00\x00')
@@ -110,8 +119,40 @@ class TecladoToque:
         w(a, _OLAT, b'\xff\xff')      # latch alto: só age quando o pino vira saída
         w(a, _IODIR, self._entrada)
 
-        self._definir_janela(C.TOQUE_ATRASO0_US, C.TOQUE_PASSOS)
-        self.calibrar()
+    def _recuperar(self):
+        """Depois de um erro de I2C (ruído do dedo pode deixar o MCP23017 preso no meio
+        de um byte, segurando o SDA): 9 clocks + STOP para soltar o barramento, reset de
+        hardware do MCP23017, I2C recriado (timeout curto) e registradores reescritos.
+        A linha de base da calibração é mantida."""
+        self.erros += 1
+        self.tocado = self._cand = self._ant = 0
+        try:
+            scl = machine.Pin(C.Exp_SCL, machine.Pin.OPEN_DRAIN, value=1)
+            sda = machine.Pin(C.Exp_SDA, machine.Pin.OPEN_DRAIN, value=1)
+            utime.sleep_us(10)
+            for _ in range(9):              # escravo preso: dá clock até ele soltar o SDA
+                if sda.value():
+                    break
+                scl.value(0)
+                utime.sleep_us(5)
+                scl.value(1)
+                utime.sleep_us(5)
+            sda.value(0)                    # condição de STOP
+            utime.sleep_us(5)
+            scl.value(1)
+            utime.sleep_us(5)
+            sda.value(1)
+            utime.sleep_us(5)
+            rst = machine.Pin(C.Exp_RST, machine.Pin.OUT, value=0)   # reset do MCP23017
+            utime.sleep_ms(1)
+            rst.value(1)
+            utime.sleep_ms(2)
+            self.i2c = machine.I2C(C.EXP_I2C_ID, scl=machine.Pin(C.Exp_SCL),
+                                   sda=machine.Pin(C.Exp_SDA), freq=C.EXP_I2C_FREQ,
+                                   timeout=5000)
+            self._config_regs()
+        except OSError:
+            pass                            # a próxima varredura tenta de novo
 
     # ---------- medição ----------
     def _definir_janela(self, atraso0, passos):
@@ -202,7 +243,7 @@ class TecladoToque:
         passos = max(4, min(C.TOQUE_PASSOS_MAX, passos))
         self._definir_janela(atraso0, passos)
 
-    def calibrar(self, ciclos=C.TOQUE_CICLOS_CAL):
+    def calibrar(self, ciclos=C.TOQUE_CICLOS_CAL, tentativas=3):
         """Define a linha de base com os pads livres. Não encoste nas teclas."""
         n = self.n
         try:
@@ -222,8 +263,10 @@ class TecladoToque:
                         mn[i] = v
                     if v > mx[i]:
                         mx[i] = v
-        except OSError:                         # MCP não respondeu: tenta de novo depois
-            self.tocado = self._cand = self._ant = 0
+        except OSError:                         # MCP não respondeu: recupera e tenta de novo
+            self._recuperar()
+            if tentativas > 0:
+                return self.calibrar(ciclos, tentativas - 1)
             return
 
         t_fim = self.atraso0 + self.passos * self.passo
@@ -253,8 +296,10 @@ class TecladoToque:
         """Faz uma varredura e retorna a máscara das teclas tocadas (bit i = tecla i)."""
         try:
             self.medir()
-        except OSError:                 # MCP não respondeu: considera tudo solto
-            self.tocado = self._cand = self._ant = 0
+        except OSError:                 # MCP não respondeu: recupera o I2C e considera tudo solto
+            self._recuperar()
+            for i in range(self.n):     # não deixa valores velhos congelados em self.t
+                self.t[i] = self.base16[i] >> 4
             return 0
         t = self.t
         b = self.base16
@@ -298,3 +343,98 @@ class TecladoToque:
     def teclas(mascara):
         """Máscara -> lista de índices de teclas (0..15), em ordem."""
         return [i for i in range(16) if (mascara >> i) & 1]
+
+
+# ============================================================
+# Modo INT: o pino INT do MCP23017 mede o tempo de descarga.
+#
+# Configuração: INTCON = 0xFFFF e DEFVAL = 0xFFFF (INT ativa quando o pino cai para 0),
+# GPINTEN habilita UM pad por vez e IOCON.MIRROR = 1 (INTA e INTB juntos, não importa
+# em qual deles a PCB ligou o GP Exp_INT). O Pico mede, com o timer de 1 µs do RP2040,
+# o tempo entre soltar o pad e a borda de descida do INT. A resolução deixa de depender
+# da duração da transação I2C (~100 µs) e passa a ser ~1 µs.
+# ============================================================
+_IOCON = const(0x0A)
+_DEFVAL = const(0x06)    # DEFVALA/B + INTCONA/B em sequência (0x06..0x09)
+
+
+@micropython.viper
+def _esperar_int(mascara: int, timeout: int) -> int:
+    """Devolve os µs até o pino INT (bit 'mascara' do SIO GPIO_IN) cair, ou 'timeout'."""
+    gpio = ptr32(0xD0000004)      # SIO GPIO_IN
+    tim = ptr32(0x40054028)       # TIMERAWL: contador de 1 µs
+    t0 = int(tim[0])
+    while True:
+        dt = (int(tim[0]) - t0) & 0xFFFFFF
+        if (int(gpio[0]) & mascara) == 0:
+            return dt
+        if dt >= timeout:
+            return timeout
+
+
+class TecladoToqueINT(TecladoToque):
+    def __init__(self, mcp):
+        self.timeout = C.TOQUE_INT_TIMEOUT_US
+        self._pin_int = machine.Pin(C.Exp_INT, machine.Pin.IN, machine.Pin.PULL_UP)
+        self._mask_int = 1 << C.Exp_INT
+        # Escrita única de 6 bytes a partir de IODIR: IODIR=0 (carrega), IPOL=0, GPINTEN = só o pad i
+        self._cargas = [bytes((0, 0, 0, 0, (1 << i) & 0xFF, (1 << i) >> 8))
+                        for i in range(C.N_TECLAS)]
+        super().__init__(mcp)
+
+    def _config_regs(self):
+        super()._config_regs()
+        i2c = self.i2c
+        a = self.addr
+        # INT em OR (MIRROR = bit 6), compara com DEFVAL = 1 (dispara quando o pino cai)
+        v = i2c.readfrom_mem(a, _IOCON, 1)[0]
+        i2c.writeto_mem(a, _IOCON, bytes((v | 0x40,)))
+        i2c.writeto_mem(a, _DEFVAL, b'\xff\xff\xff\xff')
+
+    def _ajustar_janela(self):
+        # Sem janela: o tempo vem direto do INT. Só procura pads com defeito.
+        self._definir_janela(0, max(4, self.timeout // self.passo))
+        self.medir()
+        defeito = 0
+        for i in range(self.n):
+            if self.t[i] >= self.timeout:
+                defeito |= 1 << i
+        self.defeito = defeito
+
+    def medir(self):
+        """Mede o tempo de descarga de cada pad (µs) em self.t, um pad por vez."""
+        i2c = self.i2c
+        a = self.addr
+        buf = self._buf
+        acum = self._acum
+        t = self.t
+        mask = self._mask_int
+        tout = self.timeout
+        r = self.repeticoes
+        cargas = self._cargas
+        entrada = self._entrada
+        carga = self.carga
+        sem_irq = self.sem_irq
+        for i in range(self.n):
+            soma = 0
+            for _ in range(r):
+                i2c.writeto_mem(a, _IODIR, cargas[i])       # carrega o pad i e arma o INT dele
+                if carga:
+                    utime.sleep_us(carga)
+                if sem_irq:
+                    irq = machine.disable_irq()
+                try:
+                    i2c.writeto_mem(a, _IODIR, entrada)     # solta: começa a descarregar
+                    soma += _esperar_int(mask, tout)
+                finally:
+                    if sem_irq:
+                        machine.enable_irq(irq)
+                i2c.readfrom_mem_into(a, _GPIO, buf)        # lê o GPIO: limpa o INT latcheado
+            acum[i] = soma
+            t[i] = soma // r
+
+
+# Mantém o resto do projeto inalterado: quem importa TecladoToque recebe o modo escolhido.
+TecladoToqueI2C = TecladoToque
+if C.TOQUE_USAR_INT:
+    TecladoToque = TecladoToqueINT
