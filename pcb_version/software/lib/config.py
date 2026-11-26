@@ -24,7 +24,7 @@ Exp_SDA = 10
 Exp_RST = 9      # RESET do MCP23017 (ativo em nível baixo)
 Exp_INT = 8      # INT (não usado)
 EXP_I2C_ID = 1   # GP10/GP11 = I2C1
-EXP_I2C_FREQ = 400000   # 1000000 deixa a varredura ~2x mais rápida (o MCP23017 aceita até 1,7 MHz)
+EXP_I2C_FREQ = 400000   # máximo especificado do MCP23017 a 3V3 (1 MHz só vale com 4,5-5,5 V e pull-ups fortes)
 EXP_ADDR = 0x20
 
 # Teclado de toque capacitivo (ver toque.py)
@@ -40,8 +40,14 @@ TOQUE_FOLGA_US = 64      # janela além do pad livre mais lento (espaço para o 
 TOQUE_REPETICOES = 1     # varreduras somadas por medição (2 = menos ruído, 2x mais lento)
 TOQUE_T_MAX_US = 1500    # limite da busca grossa da calibração (pad que não cai = defeito)
 TOQUE_SEM_IRQ = True     # desliga IRQs entre soltar e ler (atraso exato, menos jitter)
-# Detecção
-TOQUE_LIMIAR_US = 24     # mínimo acima da linha de base para considerar tocado
+# Modo INT: o pino INT do MCP23017 (Exp_INT) vira o "cronômetro" da descarga.
+# Mede o tempo entre soltar o pad e a borda do INT (resolução ~1 µs, não depende do I2C).
+# Mede 1 pad por vez (varredura ~10 ms). Se False, usa o método antigo (leitura I2C).
+TOQUE_USAR_INT = True
+TOQUE_INT_TIMEOUT_US = 300   # tempo máximo esperando o INT (acima disso o pad é "defeito")
+# Detecção (com TOQUE_USAR_INT = True os tempos são em µs reais, por isso limiar pequeno;
+# no método antigo use TOQUE_LIMIAR_US = 24)
+TOQUE_LIMIAR_US = 3      # mínimo acima da linha de base para considerar tocado
 TOQUE_K_RUIDO = 3        # limiar do pad = max(TOQUE_LIMIAR_US, K x ruído da calibração)
 TOQUE_SOLTAR_PCT = 60    # histerese: solta quando cai abaixo de 60% do limiar
 TOQUE_CICLOS_CAL = 16    # medições usadas na calibração
@@ -81,7 +87,7 @@ IBUF_PLAYER = 16384   # ~186 ms de folga (mono). 32768 falha com MemoryError (he
 
 # Volume
 VOL_PASSO = 2        # % por clique do encoder
-VOLUME_INICIAL = 30
+VOLUME_INICIAL = 15
 
 # Botões de navegação
 NAV_DEBOUNCE_MS = 30     # ignora repiques depois de uma borda
