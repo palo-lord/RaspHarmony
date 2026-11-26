@@ -29,8 +29,6 @@ EXP_ADDR = 0x20
 
 # Teclado de toque capacitivo (ver toque.py)
 N_TECLAS = 16
-TOQUE_PULLUP = False      # True: resistor de 1 MΩ de cada pad para 3V3 (mede o tempo de SUBIDA).
-                         # False: resistor para GND (mede o tempo de DESCIDA) (Pulldown).
 TOQUE_AMOSTRAS = 3       # ciclos carga/descarga por varredura (a média reduz o ruído)
 TOQUE_DITHER_US = 35     # atraso extra entre ciclos (µs) para melhorar a resolução do tempo
 TOQUE_LEITURAS = 6       # leituras I2C por ciclo (tempo máx. de carga ≈ leituras x ~100 µs)
