@@ -29,11 +29,23 @@ EXP_ADDR = 0x20
 
 # Teclado de toque capacitivo (ver toque.py)
 N_TECLAS = 16
-TOQUE_AMOSTRAS = 3       # ciclos carga/descarga por varredura (a média reduz o ruído)
-TOQUE_DITHER_US = 35     # atraso extra entre ciclos (µs) para melhorar a resolução do tempo
-TOQUE_LEITURAS = 6       # leituras I2C por ciclo (tempo máx. de carga ≈ leituras x ~100 µs)
-TOQUE_LIMIAR_US = 50     # acima da linha de base por mais que isso = tocado
-TOQUE_T_MAX_US = 2000    # tempo atribuído a um pad que não carregou dentro das leituras
+# Medição (amostragem em tempo equivalente: 1 leitura por ciclo, atraso crescente)
+TOQUE_CARGA_US = 20      # tempo com os pads como saída em nível alto antes de soltar (carga)
+TOQUE_PASSO_US = 8       # resolução: incremento do atraso entre ciclos (µs)
+TOQUE_JANELA_AUTO = True # calibração posiciona a janela em volta dos pads livres
+TOQUE_ATRASO0_US = 0     # início da janela (µs) - só usado se TOQUE_JANELA_AUTO = False
+TOQUE_PASSOS = 16        # ciclos por varredura - só usado se TOQUE_JANELA_AUTO = False
+TOQUE_PASSOS_MAX = 20    # limite de ciclos com janela automática (cada ciclo ≈ 0,4 ms a 400 kHz)
+TOQUE_FOLGA_US = 64      # janela além do pad livre mais lento (espaço para o dedo)
+TOQUE_REPETICOES = 1     # varreduras somadas por medição (2 = menos ruído, 2x mais lento)
+TOQUE_T_MAX_US = 1500    # limite da busca grossa da calibração (pad que não cai = defeito)
+TOQUE_SEM_IRQ = True     # desliga IRQs entre soltar e ler (atraso exato, menos jitter)
+# Detecção
+TOQUE_LIMIAR_US = 24     # mínimo acima da linha de base para considerar tocado
+TOQUE_K_RUIDO = 3        # limiar do pad = max(TOQUE_LIMIAR_US, K x ruído da calibração)
+TOQUE_SOLTAR_PCT = 60    # histerese: solta quando cai abaixo de 60% do limiar
+TOQUE_CICLOS_CAL = 16    # medições usadas na calibração
+TOQUE_PRESO_MS = 30000   # pad "tocado" por mais que isso é recalibrado (0 = desliga)
 
 # Mapeamento padrão: tecla i (0..15) -> semitons acima do Dó da oitava atual.
 # 0..11 = C..B da oitava, 12..23 = C..B da oitava seguinte, etc. (máx. MAPA_MAX)
@@ -98,4 +110,3 @@ UI_MIN_MS = 150          # intervalo mínimo entre redesenhos da tela
 # Afinador
 PASSO_CENTS = 1      # cents por clique do encoder
 LIM_CENTS = 50       # afinação limitada a +-50 cents
-
