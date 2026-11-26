@@ -1,21 +1,23 @@
 # ============================================================
 # toque.py - Teclado de toque capacitivo DIY (16 pads no MCP23017)
 #
-# Princípio (tempo de carga): cada pad tem um resistor de 1 MΩ para 3V3 e está
-# ligado a um GPIO do MCP23017.
-#   1. Os 16 GPIOs viram SAÍDA em nível baixo -> todos os pads descarregam.
+# Princípio (tempo de DESCARGA): cada pad tem um resistor de 1 MΩ para o GND
+# (pulldown) e está ligado a um GPIO do MCP23017.
+#   1. Os 16 GPIOs viram SAÍDA em nível alto -> todos os pads carregam até 3V3.
 #   2. Os 16 GPIOs viram ENTRADA ao mesmo tempo (uma escrita I2C de 2 bytes) ->
-#      cada pad carrega pelo resistor, com constante de tempo R x C.
+#      cada pad descarrega pelo resistor para o GND, com constante de tempo R x C.
 #   3. Lê-se o GPIO (2 bytes, uma transação) várias vezes, carimbando o tempo de
-#      cada leitura. O primeiro carimbo em que o pad aparece em nível alto é o
-#      "tempo de carga" dele.
-# O dedo soma capacitância ao pad -> carga mais lenta -> tempo maior que a linha
-# de base (medida na calibração e acompanhada devagar para absorver deriva).
+#      cada leitura. O primeiro carimbo em que o pad aparece em nível baixo é o
+#      "tempo de descarga" dele.
+# O dedo soma capacitância ao pad -> descarga mais lenta -> tempo maior que a
+# linha de base (medida na calibração e acompanhada devagar para absorver deriva).
 #
 # Limite físico: a resolução é o tempo de uma leitura I2C (~100 µs a 400 kHz).
 # Para compensar, cada varredura faz TOQUE_AMOSTRAS ciclos com atrasos
 # diferentes (dither) e tira a média. Ajuste os TOQUE_* do config.py com o
 # script teste_toque.py.
+#
+# Obs.: TOQUE_PULLUP do config.py não é mais usado (o hardware é pulldown).
 #
 # Só varra este teclado no modo Instrumento: cada varredura ocupa o I2C.
 # ============================================================
@@ -30,7 +32,7 @@ _OLAT = 0x14     # OLATA  (OLATB = 0x15)
 
 
 class TecladoToque:
-    def __init__(self, mcp, pullup=C.TOQUE_PULLUP, amostras=C.TOQUE_AMOSTRAS,
+    def __init__(self, mcp, amostras=C.TOQUE_AMOSTRAS,
                  dither_us=C.TOQUE_DITHER_US, leituras=C.TOQUE_LEITURAS,
                  limiar_us=C.TOQUE_LIMIAR_US, t_max_us=C.TOQUE_T_MAX_US):
         # 'mcp' é um MCP23017 já inicializado (todos os pinos como entrada, IOCON = 0).
@@ -43,37 +45,34 @@ class TecladoToque:
         self.leituras = leituras
         self.limiar = limiar_us
         self.t_max = t_max_us
-        # nível de descarga: 0 V se o resistor puxa para 3V3; 3V3 se puxa para GND
-        nivel = 0x00 if pullup else 0xFF
-        self.inv = 0x0000 if pullup else 0xFFFF
-        self._saida = bytes((0x00, 0x00))
-        self._entrada = bytes((0xFF, 0xFF))
+        self._saida = bytes((0x00, 0x00))       # IODIR: todos como saída (carrega)
+        self._entrada = bytes((0xFF, 0xFF))     # IODIR: todos como entrada (descarrega)
         self._buf = bytearray(2)
-        self.t = array('i', [0] * self.n)       # tempo de carga medido (µs, média)
+        self.t = array('i', [0] * self.n)       # tempo de descarga medido (µs, média)
         self.base = array('i', [0] * self.n)    # linha de base (µs)
         self.tocado = 0                         # máscara das teclas tocadas (bit i = tecla i)
         self._ant = 0
-        # latch de saída = nível de descarga (só entra em ação quando o pino vira saída)
-        self.i2c.writeto_mem(self.addr, _OLAT, bytes((nivel, nivel)))
+        # latch de saída = nível alto (só entra em ação quando o pino vira saída)
+        self.i2c.writeto_mem(self.addr, _OLAT, bytes((0xFF, 0xFF)))
         self.i2c.writeto_mem(self.addr, _IODIR, self._entrada)
         self.calibrar()
 
     def _ciclo(self, atraso_us, acum):
-        """Um ciclo descarga -> carga -> leituras. Soma os tempos em 'acum'."""
+        """Um ciclo carga -> descarga -> leituras. Soma os tempos em 'acum'."""
         i2c = self.i2c
         addr = self.addr
         buf = self._buf
-        i2c.writeto_mem(addr, _IODIR, self._saida)      # descarrega
-        i2c.writeto_mem(addr, _IODIR, self._entrada)    # libera: começa a carregar
+        i2c.writeto_mem(addr, _IODIR, self._saida)      # carrega (saída em nível alto)
+        i2c.writeto_mem(addr, _IODIR, self._entrada)    # libera: começa a descarregar
         t0 = utime.ticks_us()
         if atraso_us:
             utime.sleep_us(atraso_us)
-        pend = 0xFFFF
-        inv = self.inv
+        pend = 0xFFFF                                   # pads que ainda estão em nível alto
         for _ in range(self.leituras):
             i2c.readfrom_mem_into(addr, _GPIO, buf)
             t = utime.ticks_diff(utime.ticks_us(), t0)
-            novos = ((buf[0] | (buf[1] << 8)) ^ inv) & pend
+            # pads que já caíram para nível baixo e ainda não tinham sido carimbados
+            novos = ~(buf[0] | (buf[1] << 8)) & pend
             if novos:
                 for i in range(self.n):
                     if (novos >> i) & 1:
@@ -88,7 +87,7 @@ class TecladoToque:
                     acum[i] += tm
 
     def medir(self):
-        """Mede o tempo de carga de cada pad (média de 'amostras' ciclos) em self.t."""
+        """Mede o tempo de descarga de cada pad (média de 'amostras' ciclos) em self.t."""
         acum = [0] * self.n
         for k in range(self.amostras):
             self._ciclo(k * self.dither, acum)
