@@ -204,6 +204,33 @@ Fonte: `modular/lib/config.py`.
 Versão PCB
 | Função | Sinal | GPIO | Periférico | Observação |
 |---|---|---|---|---|
+| **Display OLED** | SCK | GP18 | **SPI0** | 8 MHz |
+| | MOSI | GP19 | **SPI0** | Dados |
+| | CS | GP22 | Digital | Select |
+| | RES | GP19 | Digital | Reset |
+| | DC | GP19 | Digital | Comando |
+| **Cartão SD** | SCK | GP2 | **SPI0** | 1.32 MHz |
+| | MOSI | GP3 | **SPI0** | |
+| | MISO | GP0 | **SPI0** | |
+| | CS | GP4 | Digital | |
+| **Botões de Navegação** | UP | GP12 | Digital |  |
+| | Right | GP1 | Digital |  |
+| | Left | GP13 | Digital |  |
+| | Down | GP15 | Digital |  |
+| | Ok | GP14 | Digital |  |
+| **Encoder** | A (CLK) | GP26 | Digital + IRQ | Pull-up interno |
+| | B (DT) | GP27 | Digital + IRQ | Pull-up interno |
+| **Áudio I2S** | BCLK (SCK) | GP6 | I2S0 | |
+| | LRC (WS) | GP7 | I2S0 | Deve ser sempre o GPIO seguinte ao BCLK |
+| | DIN (SD) | GP5 | I2S0 | |
+| **Cartão SD** | SCK | GP2 | SPI0 | 1.32 MHz |
+| | MOSI | GP3 | SPI0 | |
+| | MISO | GP0 | SPI0 | |
+| | CS | GP4 | Digital | |
+| **Expansor 16 GPIO I2C** | SDA | GP10 | I2C1 | 400 kHz, endereço `0x20`|
+| | SCL | GP11 | I2C1 | |
+| | RST | GP9 | I2C1 | |
+| | INT | GP8 | Digital | Flag Interrupção |
 
 
 
