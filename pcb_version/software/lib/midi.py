@@ -103,3 +103,4 @@ NOTAS = MIDI.NOTE_NAMES
 ACORDES_LISTA = [NOTAS[r] + " " + t for r in range(12) for t in MIDI.CHORD_TYPES]
 
 midi = MIDI(root_base_midi=60, sample_rate=SAMPLE_RATE)
+

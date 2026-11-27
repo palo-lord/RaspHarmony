@@ -112,3 +112,4 @@ class Botoes:
     def atualizar(self):
         for b in self._todos:
             b.atualizar()
+

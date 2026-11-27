@@ -482,3 +482,4 @@ class SSD1309_SPI(framebuf.FrameBuffer):
             for convenience. Call show() to update the display.
         """
         return super().pixel(x, y, color)
+

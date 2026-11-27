@@ -59,9 +59,20 @@ TOQUE_PRESO_MS = 30000   # pad "tocado" por mais que isso é recalibrado (0 = de
 # martelada = som sujo). Aumente se ainda houver redisparos; diminua para notas mais curtas.
 TECLA_SEGURA_MS = 100
 
-# Mapeamento padrão: tecla i (0..15) -> semitons acima do Dó da oitava atual.
+# Mapeamentos padrão: tecla i (0..15) -> semitons acima do Dó da oitava atual.
 # 0..11 = C..B da oitava, 12..23 = C..B da oitava seguinte, etc. (máx. MAPA_MAX)
-MAPA_PADRAO = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
+# Os índices seguem o número do pad menos 1: índice 0 = pad 1 (último fisicamente)
+# e índice 15 = pad 16 (primeiro fisicamente).
+#
+# Padrão 1 (um tom, cromático): pads 16..1 = F G A B | C C# D D# E | F F# G G# A A# B
+#            pad:  1   2   3  4  5  6  7  8  9  10 11 12 13 14 15 16
+_MAPA_1 = (11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 11, 9, 7, 5)
+# Padrão 2 (dois tons, escala de Dó maior): pads 16..9 no tom atual, 8 (Ré) também,
+# pads 7..1 no tom seguinte.
+#            pad:  1   2   3   4   5   6   7  8  9  10 11 12 13 14 15 16
+_MAPA_2 = (23, 21, 19, 17, 16, 14, 12, 2, 0, 11, 9, 7, 5, 4, 2, 0)
+MAPAS_PADRAO = (_MAPA_1, _MAPA_2)
+MAPA_PADRAO = MAPAS_PADRAO[0]   # padrão de partida
 MAPA_MAX = 35
 
 # Display OLED 2,42"/2,45" SSD1309 (SPI)
@@ -78,24 +89,29 @@ OLED_ROTACAO = 0         # 0 ou 180, conforme a montagem do display
 # Cartão SD (SPI0)
 SD_MOUNT = "/sd"
 SD_SCK, SD_MOSI, SD_MISO, SD_CS = 2, 3, 0, 4
-SD_BAUD = 1320000    # velocidade do SD após a inicialização (valor padrão do sdcard.py);
-                     # se o cartão aguentar, tente 4000000 ou mais para folgar no Player
-TAM_BUFFER = 8192    # bytes lidos por vez do SD (múltiplo de 512 é ideal), 93ms
+SD_BAUD = 12000000   # velocidade do SD após a inicialização. Era 1,32 MHz (~165 KB/s úteis no máximo, e menos
+                     # com o overhead do Python): não sustentava nem um WAV estéreo de 32 kHz (128 KB/s),
+                     # daí o picote. Se o cartão der erro de leitura (OSError 5) ou não montar, tente
+                     # 8000000 ou 4000000.
+TAM_BUFFER = 4096    # bytes lidos por vez do SD (múltiplo de 512). Era 8192, mas faltava um bloco
+                     # contíguo de RAM para ele depois do buffer do I2S (MemoryError). Deve ficar bem abaixo de IBUF_PLAYER
 REPETIR_LISTA = True
 
 # Estados do Player
 PARADO, TOCANDO, PAUSADO = 0, 1, 2
 
 # Áudio / I2S
-SAMPLE_RATE = 44100
-IBUF_SINT = 4096     # ~46.5 ms de latência no teclado
-SINT_MARGEM_BLOCOS = 2   # blocos de sobra gerados a cada varredura do teclado (ver app.py)
-SINT_BLOCOS_MAX = 8      # máx. de blocos por volta (8 x 256 amostras = IBUF_SINT inteiro)
+SAMPLE_RATE = 44100          # sintetizador (teclado)
+SAMPLE_RATE_PLAYER = 44100   # Player: I2S abre a 44,1 kHz (se o WAV tiver outra taxa, o audio.py reabre na taxa do arquivo)
+IBUF_SINT = 6144     # ~70 ms de latência no teclado (era 4096 = ~46.5 ms; mais folga contra
+                     # estalos de buffer vazio, enquanto a varredura do toque/OLED ocupa a CPU)
+SINT_MARGEM_BLOCOS = 3   # blocos de sobra gerados a cada varredura do teclado (ver app.py)
+SINT_BLOCOS_MAX = 12     # máx. de blocos por volta (12 x 256 amostras = IBUF_SINT inteiro)
 IBUF_PLAYER = 16384  # ~186 ms de folga (mono). 32768 falha com MemoryError (heap fragmentado)
 
 # Volume
 VOL_PASSO = 2        # % por clique do encoder
-VOLUME_INICIAL = 15
+VOLUME_INICIAL = 16
 
 # Botões de navegação
 NAV_DEBOUNCE_MS = 30     # ignora repiques depois de uma borda

@@ -8,6 +8,9 @@
 #   y = 55..63   rodapé: dica de teclas ou abas selecionáveis
 # Fonte 8x8 do framebuf (16 colunas x 8 linhas), só ASCII.
 # ============================================================
+import math
+import utime
+
 from config import OLED_W, MODES, TOCANDO, LIM_CENTS, N_TECLAS
 from midi import MIDI, NOTAS
 from estado import (M_MENU, M_TECLADO, M_PLAYER, M_INSTR, M_ACORDES, M_AFINADOR, M_MAPA)
@@ -34,6 +37,9 @@ class Tela:
         self.midi = midi
         self.audio = audio
         self.arquivos = arquivos
+        self._rot_ms = 0                 # tempo acumulado tocando (gira o disco)
+        self._t_rot = utime.ticks_ms()
+        self._cache_nome = ("", "")
 
     # ---------- primitivas ----------
     def texto(self, s, x, y, c=1):
@@ -159,20 +165,31 @@ class Tela:
             self.icone_player(86, 16)
         self.rodape("U/D:Mover OK:Ir")
 
+    def miniatura_teclado(self, y=49, h=14):
+        """Os 16 pads em fileira, na ordem física da PCB (da esquerda p/ direita: pad 16 ... pad 1).
+        Cada pad acende enquanto a tecla está apertada. Ajuste x/y/larg/h aqui se o
+        arranjo da placa for diferente."""
+        o = self.oled
+        mask = self.e.teclas_mask
+        for p in range(N_TECLAS):
+            i = N_TECLAS - 1 - p                 # índice da tecla (pad = i + 1)
+            x = 2 + 8 * p
+            if (mask >> i) & 1:
+                o.fill_rect(x, y, 6, h, 1)
+            else:
+                o.rect(x, y, 6, h, 1)
+
     def tela_teclado(self):
         e = self.e
         o = self.oled
+        sel = e.mode_sel
         self.barra_titulo("Teclado")
-        self.lista(MODES[M_TECLADO], e.mode_sel, 0, 13, 84)
-        o.vline(85, 12, 50, 1)
-        self.texto("Piano" if e.instrumento == "Piano" else "Sint.", 87, 15)
-        self.texto("Oit.{}".format(e.oitava), 87, 25)
-        for r in range(4):                      # as 16 teclas de toque
-            for c in range(4):
-                if (e.teclas_mask >> (4 * r + c)) & 1:
-                    o.fill_rect(98 + 6 * c, 37 + 6 * r, 5, 5, 1)
-                else:
-                    o.rect(98 + 6 * c, 37 + 6 * r, 5, 5, 1)
+        self.lista(["Instrum.", "Acordes", "Afinador"], sel, 0, 13, 65, recuo=1)
+        o.vline(66, 12, 34, 1)
+        self.lista(["Mapa", "Menu"], sel - 3, 68, 13, 59)
+        self.texto("{} O{}".format("Pno" if e.instrumento == "Piano" else "Sin", e.oitava), 68, 36)
+        o.hline(0, 46, OLED_W, 1)
+        self.miniatura_teclado()
 
     def tela_instrumento(self):
         e = self.e
@@ -201,22 +218,23 @@ class Tela:
         o = self.oled
         self.barra_titulo("Acordes")
         itens = MODES[M_ACORDES]
-        n = len(itens)
-        ini = max(0, min(e.mode_sel - 1, n - 3))     # janela rolante de 3 itens
-        self.lista(itens, e.mode_sel, 0, 13, 118, ini=ini, qtd=3)
+        n = len(itens) - 1                           # só os acordes; o último item é o botão
+        no_botao = e.mode_sel >= n
+        idx = e.acorde_volta if no_botao else e.mode_sel
+        ini = max(0, min(idx - 1, n - 3))            # janela rolante de 3 itens
+        self.lista(itens, -1 if no_botao else idx, 0, 13, 118, ini=ini, qtd=3)
         o.rect(123, 13, 4, 29, 1)                    # barra de rolagem
         th = max(3, 29 * 3 // n)
         o.fill_rect(123, 13 + (29 - th) * ini // max(1, n - 3), 4, th, 1)
-        if e.mode_sel < n - 1:
-            raiz, tipo = e.mode_sel // 4, MIDI.CHORD_TYPES[e.mode_sel % 4]
-            ms = self.midi.acorde_midis(raiz, tipo)
-            s = " ".join(self.midi.midi_to_name(m) for m in ms)
-            if e.acorde_ativo():
-                o.fill_rect(0, 43, OLED_W, 10, 1)
-                self.centro(s, 0, OLED_W, 44, 0)
-            else:
-                self.centro(s, 0, OLED_W, 44, 1)
-        self.rodape("<>:Raiz OK:Toca")
+        ms = self.midi.acorde_midis(idx // 4, MIDI.CHORD_TYPES[idx % 4])
+        s = " ".join(self.midi.midi_to_name(m) for m in ms)
+        if e.acorde_ativo():
+            o.fill_rect(0, 43, OLED_W, 10, 1)
+            self.centro(s, 0, OLED_W, 44, 0)
+        else:
+            self.centro(s, 0, OLED_W, 44, 1)
+        self.texto("OK:Toca", 2, 56)
+        self.aba(itens[n], 66, 55, 60, no_botao)     # botão à direita, sempre à mão
 
     def tela_afinador(self):
         e = self.e
@@ -248,19 +266,47 @@ class Tela:
     def tela_mapa(self):
         e = self.e
         o = self.oled
-        self.barra_titulo("Mapeamento")
+        sel = e.mode_sel
+        pad = "Pad.{}".format(e.padrao_idx + 1) if e.padrao_idx >= 0 else "Pers."
+        self.barra_titulo("Mapa", pad)
         nome = self.midi.midi_to_name(e.nota_tecla(e.map_tecla))
-        itens = ["Tecla: {:02d}".format(e.map_tecla + 1), "Nota: " + nome,
-                 MODES[M_MAPA][2], MODES[M_MAPA][3]]
-        self.lista(itens, e.mode_sel, 0, 13, 80)
-        for i in range(N_TECLAS):                    # grade 4x4 = disposição das teclas
-            x = 84 + 10 * (i % 4)
-            y = 13 + 10 * (i // 4)
+        self.aba("Tecla:{:02d}".format(e.map_tecla + 1), 2, 12, 61, sel == 0)
+        self.aba("Nota:" + nome, 65, 12, 61, sel == 1)
+        # Sequência de notas na ordem física: o pad 16 é o primeiro e o pad 1 o último
+        for p in range(N_TECLAS):
+            i = N_TECLAS - 1 - p
+            x = 32 * (p % 4)
+            y = 23 + 8 * (p // 4)
+            s = self.midi.midi_to_name(e.nota_tecla(i))
             if i == e.map_tecla:
-                o.fill_rect(x, y, 9, 9, 1)
+                o.fill_rect(x, y, 32, 8, 1)
+                self.centro(s, x, 32, y, 0)
             else:
-                o.rect(x, y, 9, 9, 1)
-        self.rodape("<>:Valor  OK:Ir")
+                self.centro(s, x, 32, y, 1)
+        pd = "<Pad:{}>".format(e.padrao_idx + 1) if e.padrao_idx >= 0 else "<Pad:*>"
+        self.aba(pd, 2, 55, 61, sel == 2)
+        self.aba(MODES[M_MAPA][3], 66, 55, 60, sel == 3)
+
+    def disco(self, cx, cy, r, rot_ms):
+        """Disco de vinil girando (1 volta a cada 2 s enquanto toca)."""
+        o = self.oled
+        self.circulo(cx, cy, r)
+        self.circulo(cx, cy, 2)
+        a = rot_ms * 6.2832 / 2000
+        c = math.cos(a)
+        s = math.sin(a)
+        o.line(cx + round(3 * c), cy + round(3 * s), cx + round((r - 2) * c), cy + round((r - 2) * s), 1)
+        o.line(cx - round(3 * c), cy - round(3 * s), cx - round((r - 5) * c), cy - round((r - 5) * s), 1)
+
+    def _nome_faixa(self, p):
+        """Nome da faixa atual sem pasta/.wav e sem acentos (em cache)."""
+        caminho = p.arquivos[p.indice]
+        if self._cache_nome[0] != caminho:
+            nome = ascii_(caminho.split("/")[-1])
+            if nome.lower().endswith(".wav"):
+                nome = nome[:-4]
+            self._cache_nome = (caminho, nome)
+        return self._cache_nome[1]
 
     def tela_player(self):
         e = self.e
@@ -271,35 +317,26 @@ class Tela:
         if p is not None and self.arquivos:
             extra = "{}/{}".format(p.indice + 1, len(p.arquivos))
         self.barra_titulo("Player", extra)
-        self.circulo(20, 33, 15)                     # disco
-        self.circulo(20, 33, 5)
-        o.fill_rect(19, 32, 3, 3, 1)
+
+        agora = utime.ticks_ms()
+        if p is not None and p.estado == TOCANDO:
+            self._rot_ms += utime.ticks_diff(agora, self._t_rot)
+        self._t_rot = agora
+        self.disco(64, 22, 9, self._rot_ms)          # y = 13..31
+
         if p is None or not self.arquivos:
-            self.centro("Sem arquivos", 39, 88, 24)
-            self.centro("WAV no SD", 39, 88, 34)
+            self.centro("Sem arquivos", 0, OLED_W, 35)
+            self.centro("WAV no SD", 0, OLED_W, 45)
             dica = "OK:Sair" if sel == 1 else "OK:--"
         else:
-            nome = ascii_(p.arquivos[p.indice].split("/")[-1])
-            if nome.lower().endswith(".wav"):
-                nome = nome[:-4]
+            nome = self._nome_faixa(p)
+            # nome (16 caracteres cabem na linha; maior que isso vira letreiro rolante)
+            self.centro(self.janela(nome, agora // 400, 16), 0, OLED_W, 33)
             pos = p.wav.posicao_s if p.wav else 0
             dur = p.wav.duracao_s if p.wav else 0
-            self.texto(self.janela(nome, int(pos), 11), 39, 14)
-            self.texto("{}/{}".format(self.fmt_tempo(pos), self.fmt_tempo(dur)), 39, 25)
-            self.barra_progresso(39, 36, 88, 6, pos / dur if dur > 0 else 0)
-            # transporte: anterior | play/pause | próxima
-            ys = 45
-            o.fill_rect(60, ys, 2, 8, 1)
-            self.triangulo(63, ys, 8, False)
-            if p.estado == TOCANDO:
-                o.fill_rect(79, ys, 3, 8, 1)
-                o.fill_rect(85, ys, 3, 8, 1)
-            else:
-                self.triangulo(80, ys, 8, True)
-            self.triangulo(102, ys, 8, True)
-            o.fill_rect(106, ys, 2, 8, 1)
-            if sel == 0:
-                o.rect(55, 42, 58, 12, 1)
+            self.texto(self.fmt_tempo(pos), 0, 44)
+            self.barra_progresso(42, 45, 44, 6, pos / dur if dur > 0 else 0)
+            self.direita(self.fmt_tempo(dur), 128, 44)
             dica = "OK:Sair" if sel == 1 else ("OK:Pausa" if p.estado == TOCANDO else "OK:Tocar")
         self.texto(dica, 2, 56)
         self.aba("Menu", 88, 55, 39, sel == 1)
@@ -327,10 +364,14 @@ class Tela:
         """Resumo do que está na tela; só redesenha quando isso muda."""
         e = self.e
         if e.mode_ui == M_PLAYER and e.player is not None:
-            pos = int(e.player.wav.posicao_s) if e.player.wav else 0
-            return (M_PLAYER, e.mode_sel, e.player.indice, e.player.estado, pos,
-                    self.audio.volume)
+            p = e.player
+            pos = int(p.wav.posicao_s) if p.wav else 0
+            anim = 0                       # disco girando / nome rolando
+            if self.arquivos and (p.estado == TOCANDO or len(self._nome_faixa(p)) > 16):
+                anim = utime.ticks_ms() // 200
+            return (M_PLAYER, e.mode_sel, p.indice, p.estado, pos,
+                    self.audio.volume, anim)
         return (e.mode_ui, e.mode_sel, tuple(e.notas_tocando), e.teclas_mask,
                 self.audio.volume, e.instrumento, e.oitava, e.sel_nota,
                 self.midi.afinacao[e.sel_nota], e.acorde_ativo(), e.map_tecla,
-                tuple(e.mapa))
+                tuple(e.mapa), e.padrao_idx)

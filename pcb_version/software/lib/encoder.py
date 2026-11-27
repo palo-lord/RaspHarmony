@@ -41,3 +41,4 @@ class Encoder:
         enable_irq(st)
         return n
 
+

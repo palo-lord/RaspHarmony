@@ -83,7 +83,8 @@ class Aplicacao:
             e.player = None                # libera o buffer de 8 KB do Player
         if novo == M_PLAYER:
             gc.collect()
-            self.audio.abrir(C.SAMPLE_RATE, 1, C.IBUF_PLAYER)
+            self.audio.abrir(C.SAMPLE_RATE_PLAYER, 1, C.IBUF_PLAYER)
+            gc.collect()                   # compacta o heap depois do buffer do I2S
             e.player = Player(self.arquivos, self.audio.saida_wav, repetir=C.REPETIR_LISTA)
             if self.arquivos:
                 e.player.selecionar(0)
@@ -112,7 +113,8 @@ class Aplicacao:
             livre = not e.nav(mov_y, 0, b.ok.press) and b.ok.press
             self.controles_player()
             return livre
-        e.nav(mov_y, self._passo(b.dir) - self._passo(b.esq), b.ok.press)
+        rapido = b.cima.longo or b.baixo.longo      # segurando Up/Down (Acordes: pula de raiz em raiz)
+        e.nav(mov_y, self._passo(b.dir) - self._passo(b.esq), b.ok.press, rapido)
         return False
 
     def controles_player(self):

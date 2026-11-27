@@ -119,3 +119,4 @@ class Player:
             self.parar()
         else:
             self.proximo()
+

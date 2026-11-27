@@ -287,9 +287,9 @@ class TecladoToque:
         self.rapido = rapido
         self.saturado = saturado
         self.tocado = self._cand = self._ant = 0
-        if self.defeito or rapido or saturado:
-            print("toque: defeito=%04x rapido=%04x saturado=%04x (rode teste_toque.py)"
-                  % (self.defeito, rapido, saturado))
+        #if self.defeito or rapido or saturado:
+            #print("toque: defeito=%04x rapido=%04x saturado=%04x (rode teste_toque.py)"
+                  #% (self.defeito, rapido, saturado))
 
     # ---------- detecção ----------
     def varrer(self):

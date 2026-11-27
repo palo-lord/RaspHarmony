@@ -407,3 +407,4 @@ class VirtualPin():
         self._port.mode = self._flip_bit(self._port.mode, 0) # mode = output
         if val is not None:
             self._port.gpio = self._flip_bit(self._port.gpio, val & 1)
+

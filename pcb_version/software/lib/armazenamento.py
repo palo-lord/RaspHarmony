@@ -25,3 +25,4 @@ def montar_sd(spi, cs_pin, ponto_montagem, baud):
     except Exception as e:
         print("SD indisponivel:", e)
         return []
+

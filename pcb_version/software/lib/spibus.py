@@ -164,3 +164,4 @@ class SSD1309_SPI0(SSD1309_SPI):
         if self._sujo:
             self.show()
         return False
+

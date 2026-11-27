@@ -334,3 +334,4 @@ class Sintese:
             del vozes[m]
         finalizar(acc, self.out, n, ganho_volume * GANHO_SINT)
         return self.out
+

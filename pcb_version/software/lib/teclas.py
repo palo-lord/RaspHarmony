@@ -41,3 +41,4 @@ class FiltroTeclas:
                 ordem.remove(i)
         self.mascara = ativa
         return ativa
+

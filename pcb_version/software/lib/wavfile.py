@@ -104,3 +104,4 @@ class WavFile:
 
     def fechar(self):
         self.f.close()
+
