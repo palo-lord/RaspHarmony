@@ -1,5 +1,5 @@
 # ============================================================
-# ui.py - Interface gráfica horizontal no display OLED SH1106 (128x64)
+# ui.py - Interface gráfica horizontal no display OLED SH1109 (128x64)
 #
 # Layout comum a todas as telas:
 #   y =  0..10   barra de título invertida (título | extra | alto-falante + volume)
