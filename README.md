@@ -205,10 +205,10 @@ Versão PCB
 | Função | Sinal | GPIO | Periférico | Observação |
 |---|---|---|---|---|
 | **Display OLED** | SCK | GP18 | **SPI0** | 8 MHz |
-| | MOSI | GP19 | **SPI0** | Dados |
-| | CS | GP22 | Digital | Select |
-| | RES | GP19 | Digital | Reset |
-| | DC | GP19 | Digital | Comando |
+| | MOSI | GP19 | **SPI0** | SPI0 Compartilhado |
+| | CS | GP22 | Digital | com |
+| | RES | GP19 | Digital | Cartão SD |
+| | DC | GP19 | Digital |  |
 | **Cartão SD** | SCK | GP2 | **SPI0** | 1.32 MHz |
 | | MOSI | GP3 | **SPI0** | |
 | | MISO | GP0 | **SPI0** | |
