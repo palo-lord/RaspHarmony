@@ -158,8 +158,23 @@ Ambas têm o mesmo comportamento: a monolítica é gerada a partir da modular, a
 | PCB | Fonte de Alimentação | Fonte 5V 2A conector P4 | 1 |
 | PCB | Conector Alimentação | Jack DC P4 Femea p/ PCB | 1 |
 
-<!-- 📷 IMAGEM: foto de todos os componentes lado a lado, identificados. Arquivo sugerido: docs/img/componentes.jpg -->
-![Componentes utilizados](docs/img/componentes.jpg)
+Especifico PCB
+| Item | Descrição | Qtd. |
+|---|---|---|
+| Microcontrolador | Raspberry Pi Pico | 1 |
+| Encoder | Encoder rotativo (tipo KY-040) | 1 |
+| Amplificador de áudio | Módulo DAC e Amplificador I2S **MAX98357A** | 1 |
+| Alto-falante | 4 Ω / 3 W | 1 |
+| Armazenamento | Módulo leitor microSD (SPI) + cartão microSD 2GB | 1 |
+| Display | OLED 128×64 SPI 2.45" com controlador **SH1109** | 1 |
+| Botões de Direcionais | Botões de Navegação 12mm x 12mm | 5 |
+| Expansor 16 GPIO I2C | CI MCP23017 | 1 |
+| Conector 6 vias | Kzinho Macho 6  vias 90 graus | 2 |
+| Cabo Flat 6 vias | Com 2 Kzinho Fêmea | 1 |
+| Fonte de Alimentação | Fonte 5V 2A conector P4 | 1 |
+| Conector Alimentação | Jack DC P4 Femea p/ PCB | 1 |
+| Capacitor Alimentação | Capacitor Eletrolítico de 100 uF | 1 |
+| Parafusos | Parafusos de fixação M1.5 | 4 |
 
 ### 5.2 Diagrama de ligações
 
@@ -176,13 +191,14 @@ PCB principal:
 PCB teclado:
 <img width="1312" height="567" alt="image" src="https://github.com/user-attachments/assets/09d4ece8-65c5-41c8-89b3-4015dd0e2ddf" />
 
-### 5.3 Pinagem (versão protoboard)
+### 5.3 Pinagem
 
 Versão Protoboard
 Fonte: `modular/lib/config.py`.
 
 | Função | Sinal | GPIO | Periférico | Observação |
 |---|---|---|---|---|
+| **Fonte Externa** | 5V 2A | Pin 39 | VSYS | Com capacitor de desvio 100uF |
 | **Display OLED** | SDA | GP0 | I2C0 | 400 kHz, endereço `0x3C`, rotação 180° |
 | | SCL | GP1 | I2C0 | |
 | **Joystick** | VRx | GP26 | ADC0 | Leitura de 16 bits |
