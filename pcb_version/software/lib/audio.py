@@ -101,4 +101,3 @@ class SaidaAudio:
             aplicar_volume(dados, n, self.ganho)
         self.i2s.write(dados)
 
-

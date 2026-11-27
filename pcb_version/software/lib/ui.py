@@ -169,7 +169,10 @@ class Tela:
         self.texto("Oit.{}".format(e.oitava), 87, 25)
         for r in range(4):                      # as 16 teclas de toque
             for c in range(4):
-                o.rect(98 + 6 * c, 37 + 6 * r, 5, 5, 1)
+                if (e.teclas_mask >> (4 * r + c)) & 1:
+                    o.fill_rect(98 + 6 * c, 37 + 6 * r, 5, 5, 1)
+                else:
+                    o.rect(98 + 6 * c, 37 + 6 * r, 5, 5, 1)
 
     def tela_instrumento(self):
         e = self.e

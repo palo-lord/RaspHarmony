@@ -13,6 +13,9 @@ MODES[4] = ACORDES_LISTA + ["Teclado"]
 # Modos (índices de MODES)
 M_MENU, M_TECLADO, M_PLAYER, M_INSTR, M_ACORDES, M_AFINADOR, M_MAPA = 0, 1, 2, 3, 4, 5, 6
 
+# Modos em que o teclado de toque está ativo (Teclado e todos os seus submodos)
+MODOS_TECLADO = (M_TECLADO, M_INSTR, M_ACORDES, M_AFINADOR, M_MAPA)
+
 # Ao voltar para o modo Teclado, o cursor fica no item de onde se veio
 _VOLTA_SEL = {M_INSTR: 0, M_ACORDES: 1, M_AFINADOR: 2, M_MAPA: 3}
 

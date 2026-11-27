@@ -53,6 +53,12 @@ TOQUE_SOLTAR_PCT = 60    # histerese: solta quando cai abaixo de 60% do limiar
 TOQUE_CICLOS_CAL = 16    # medições usadas na calibração
 TOQUE_PRESO_MS = 30000   # pad "tocado" por mais que isso é recalibrado (0 = desliga)
 
+# Sustentação das teclas (anti-"picote"): depois de detectada, a tecla continua valendo por
+# este tempo desde a ÚLTIMA detecção. Garante duração mínima da nota e evita que uma falha
+# de 1 varredura (ruído, dedo no limite do limiar) solte e redispare a nota (novo ataque +
+# martelada = som sujo). Aumente se ainda houver redisparos; diminua para notas mais curtas.
+TECLA_SEGURA_MS = 100
+
 # Mapeamento padrão: tecla i (0..15) -> semitons acima do Dó da oitava atual.
 # 0..11 = C..B da oitava, 12..23 = C..B da oitava seguinte, etc. (máx. MAPA_MAX)
 MAPA_PADRAO = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
@@ -83,7 +89,9 @@ PARADO, TOCANDO, PAUSADO = 0, 1, 2
 # Áudio / I2S
 SAMPLE_RATE = 44100
 IBUF_SINT = 4096     # ~46.5 ms de latência no teclado
-IBUF_PLAYER = 16384   # ~186 ms de folga (mono). 32768 falha com MemoryError (heap fragmentado)
+SINT_MARGEM_BLOCOS = 2   # blocos de sobra gerados a cada varredura do teclado (ver app.py)
+SINT_BLOCOS_MAX = 8      # máx. de blocos por volta (8 x 256 amostras = IBUF_SINT inteiro)
+IBUF_PLAYER = 16384  # ~186 ms de folga (mono). 32768 falha com MemoryError (heap fragmentado)
 
 # Volume
 VOL_PASSO = 2        # % por clique do encoder

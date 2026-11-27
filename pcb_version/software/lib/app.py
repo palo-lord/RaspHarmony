@@ -16,7 +16,8 @@ from audio import SaidaAudio, SILENCIO
 from midi import MIDI, midi
 from sintese import Sintese
 from player import Player
-from estado import (Estado, M_PLAYER, M_INSTR, M_ACORDES, M_AFINADOR, M_MAPA)
+from estado import (Estado, M_PLAYER, M_ACORDES, M_AFINADOR, M_MAPA, MODOS_TECLADO)
+from teclas import FiltroTeclas
 from ui import Tela
 
 
@@ -60,6 +61,9 @@ class Aplicacao:
         self.audio = SaidaAudio()
         self.audio.abrir(C.SAMPLE_RATE, 1, C.IBUF_SINT)
         self.sintese = Sintese(midi)
+        self._bloco_us = self.sintese.n * 1000000 // C.SAMPLE_RATE   # duração de 1 bloco
+        self._t_fim_audio = utime.ticks_us()
+        self.filtro = FiltroTeclas(C.N_TECLAS, C.TECLA_SEGURA_MS)
 
         # Estado e interface
         self.e = Estado()
@@ -72,7 +76,9 @@ class Aplicacao:
         if antigo == M_PLAYER and e.player is not None:
             self.audio.desmutar()
             e.player.parar()
-        e.teclas_mask = 0
+        if novo not in MODOS_TECLADO:      # entre os submodos do Teclado as notas seguem
+            e.teclas_mask = 0
+            self.filtro.zerar()
         if antigo == M_PLAYER:
             e.player = None                # libera o buffer de 8 KB do Player
         if novo == M_PLAYER:
@@ -85,8 +91,10 @@ class Aplicacao:
             self.audio.abrir(C.SAMPLE_RATE, 1, C.IBUF_SINT)
             if novo == M_ACORDES:
                 e.acorde_fim = utime.ticks_ms()
-            elif novo == M_INSTR and self.toque is not None:
+            if (novo in MODOS_TECLADO and antigo not in MODOS_TECLADO
+                    and self.toque is not None):
                 self.toque.calibrar()          # linha de base com os pads livres
+            self._t_fim_audio = utime.ticks_us()
 
     # ---------- navegação ----------
     @staticmethod
@@ -134,38 +142,67 @@ class Aplicacao:
         else:
             self.audio.escrever(SILENCIO)     # pausado: mantém o I2S alimentado
 
-    def loop_sintetizador(self, delta_enc):
-        """Instrumento / Acordes / Afinador / Mapeamento (menus ficam em silêncio)."""
+    def ler_teclado(self):
+        """Varre o teclado de toque e retorna as notas MIDI das teclas ativas, na ordem
+        em que foram apertadas. Atualiza e.teclas_mask (usada pelo display)."""
         e = self.e
-        alvo = []
-        instr = e.instrumento
+        mascara = self.filtro.atualizar(self.toque.varrer())
+        e.teclas_mask = mascara
+        notas = []
+        for i in self.filtro.ordem:
+            m = e.nota_tecla(i)
+            if m not in notas:
+                notas.append(m)
+        return notas
 
-        if e.mode_ui == M_AFINADOR:
+    def escrever_sintese(self, alvo, instr, varreu):
+        """Gera e envia o áudio. A varredura do teclado leva ~10 ms, mais que um bloco de
+        síntese (5,8 ms); com 1 bloco por volta o I2S esvaziava e o som saía picotado.
+        Por isso, depois de uma varredura, gera-se o suficiente para cobrir o tempo em que
+        o áudio ficou sem alimentação (+ margem). O excesso não faz mal: i2s.write()
+        bloqueia quando o buffer enche, então o próprio hardware regula o ritmo."""
+        n = 1
+        if varreu:
+            parado = utime.ticks_diff(utime.ticks_us(), self._t_fim_audio)
+            n = parado // self._bloco_us + 1 + C.SINT_MARGEM_BLOCOS
+            if n > C.SINT_BLOCOS_MAX:
+                n = C.SINT_BLOCOS_MAX
+        ganho = self.audio.ganho
+        for _ in range(n):
+            self.audio.escrever(self.sintese.gerar(alvo, instr, ganho))
+        self._t_fim_audio = utime.ticks_us()
+
+    def loop_sintetizador(self, delta_enc):
+        """Teclado e submodos (Instrumento / Acordes / Afinador / Mapeamento).
+        O teclado de toque toca em todos eles; o menu principal fica em silêncio."""
+        e = self.e
+        modo = e.mode_ui
+        instr = e.instrumento
+        varreu = modo in MODOS_TECLADO and self.toque is not None
+        teclas = self.ler_teclado() if varreu else []
+
+        if modo == M_AFINADOR:
             instr = "Afinador"
             if delta_enc:
                 c = midi.afinacao[e.sel_nota] + delta_enc * C.PASSO_CENTS
                 midi.afinacao[e.sel_nota] = max(-C.LIM_CENTS, min(C.LIM_CENTS, c))
-            alvo = [e.nota_midi(e.sel_nota)]
+            # tom de referência; ao tocar teclas, elas substituem a referência
+            alvo = teclas if teclas else [e.nota_midi(e.sel_nota)]
         else:
             self.audio.ajustar_volume(delta_enc)
-            if e.mode_ui == M_INSTR:
-                if self.toque is not None:     # o teclado só é varrido neste modo
-                    e.teclas_mask = self.toque.varrer()
-                    for i in range(C.N_TECLAS):
-                        if (e.teclas_mask >> i) & 1:
-                            m = e.nota_tecla(i)
-                            if m not in alvo:
-                                alvo.append(m)
-                    alvo.sort()
-            elif e.mode_ui == M_ACORDES and e.acorde_ativo():
-                alvo = midi.acorde_midis(e.acorde_idx // 4,
-                                         MIDI.CHORD_TYPES[e.acorde_idx % 4])
-            elif e.mode_ui == M_MAPA and e.previa_ativa():
+            alvo = []
+            if modo == M_ACORDES and e.acorde_ativo():
+                alvo = list(midi.acorde_midis(e.acorde_idx // 4,
+                                              MIDI.CHORD_TYPES[e.acorde_idx % 4]))
+            elif modo == M_MAPA and e.previa_ativa():
                 alvo = [e.nota_tecla(e.map_tecla)]
+            for m in teclas:                   # teclas depois do acorde/prévia
+                if m not in alvo:
+                    alvo.append(m)
 
         e.notas_tocando = alvo
         # sempre escreve (silêncio se vazio)
-        self.audio.escrever(self.sintese.gerar(alvo, instr, self.audio.ganho))
+        self.escrever_sintese(alvo, instr, varreu)
 
     # ---------- laço principal ----------
     def executar(self):
@@ -195,4 +232,3 @@ class Aplicacao:
                 t_desenho = agora
                 self.tela.desenhar()
             self.tela.oled.show_parcial(1)
-
