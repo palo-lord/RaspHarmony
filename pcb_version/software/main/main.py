@@ -16,7 +16,7 @@
 #   sintese.py       Sintese (motor polifônico)
 #   player.py        Player
 #   estado.py        Estado (estado global + navegação + mapeamento das teclas)
-#   ui.py            Tela (display OLED SH1106 SPI)
+#   ui.py            Tela (display OLED SH1109 SPI)
 #   app.py           Aplicacao (hardware + laço principal)
 # Dependências externas: sh1109.py, sdcard.py, mcp23017.py
 # ============================================================
