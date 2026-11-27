@@ -250,8 +250,9 @@ Versão PCB
 
 
 
-### 5.4 Mapa do teclado matricial
+### 5.4 Mapamento Teclados
 
+Teclado matricial
 Colunas em pull-up; tecla apertada = nível baixo. As **3 primeiras linhas** formam o teclado musical; a **4ª linha** são os controles do Player.
 
 |  | C1 | C2 | C3 | C4 |
@@ -261,8 +262,9 @@ Colunas em pull-up; tecla apertada = nível baixo. As **3 primeiras linhas** for
 | **R3** | G# | A | A# | B |
 | **R4** | Reinicia | Prev | Play/Pause | Next |
 
-<!-- 📷 IMAGEM: foto do teclado com as notas etiquetadas. Arquivo sugerido: docs/img/teclado.jpg -->
-![Teclado com notas etiquetadas](docs/img/teclado.jpg)
+PCB Touch - Versão PCB
+<img width="1434" height="1185" alt="image" src="https://github.com/user-attachments/assets/01b540f4-1d2c-4b82-a984-89aed708d0ff" />
+
 
 ### 5.5 Alimentação
 
