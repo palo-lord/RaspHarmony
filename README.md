@@ -58,6 +58,11 @@ O RaspHarmony tem dois modos principais, escolhidos no menu do display OLED, e o
 | ↳ **Afinador** | Ajuste fino de cada nota em **±50 cents**, com tom de referência (senoide pura) e medidor visual. Vale para todas as oitavas e instrumentos. |
 | ↳ **Mapeamento** | Define qual nota cada um dos 16 pads toca. Dois padrões prontos (cromático e Dó maior em duas oitavas) ou mapeamento personalizado, com prévia sonora. |
 | **Player** | Reprodutor de arquivos **WAV** (PCM 16 bits, mono ou estéreo) do cartão microSD, com volume, play/pausa, faixa anterior/próxima e avanço/retrocesso de 5 s. |
+Imagens da interface no Display:
+<img width="2825" height="3544" alt="image" src="https://github.com/user-attachments/assets/46e79cf8-a51d-4434-ae6a-998fa74aadfd" />
+
+
+
 
 **Principais características técnicas (versão PCB)**
 
